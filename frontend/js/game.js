@@ -43,6 +43,9 @@ class Game {
      * Start a new game
      */
     startNewGame() {
+        // Reset the seeded RNG for deterministic map generation
+        globalRng.reset();
+
         // Create initial state
         this.state = {
             tick: 0,
@@ -144,12 +147,12 @@ class Game {
                 const resource = new NaturalResource({
                     resourceType: config.type,
                     position: new Vec2(
-                        randomFloat(100, mapWidth - 100),
-                        randomFloat(100, mapHeight - 100)
+                        globalRng.nextFloat(100, mapWidth - 100),
+                        globalRng.nextFloat(100, mapHeight - 100)
                     ),
-                    radius: randomFloat(25, 40),
+                    radius: globalRng.nextFloat(25, 40),
                     totalAmount: config.totalAmount,
-                    extractionRate: randomFloat(3, 7),
+                    extractionRate: globalRng.nextFloat(3, 7),
                     regenerationRate: config.regenerationRate
                 });
 

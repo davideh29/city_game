@@ -11,8 +11,8 @@ class Renderer {
 
         // Colors from design doc
         this.colors = {
-            mapBackground: '#16213e',
-            gridLines: '#1e2d50',
+            mapBackground: '#ffffff',
+            gridLines: '#e0e0e0',
             selection: '#4fc3f7',
             selectionGlow: 'rgba(79, 195, 247, 0.3)',
 
@@ -155,39 +155,39 @@ class Renderer {
      */
     drawSettlement(ctx, settlement, gameState) {
         const { x, y } = settlement.position;
-        const radius = settlement.radius;
         const player = gameState.players[settlement.ownerId];
         const color = player ? player.color : this.colors.players.neutral;
 
+        // Calculate house positions first to determine actual bounds
+        const { positions: housePositions, boundingRadius } = this.calculateHousePositions(settlement, gameState);
+        const radius = boundingRadius;
+
         // Glow effect
-        const gradient = ctx.createRadialGradient(x, y, radius * 0.5, x, y, radius * 1.5);
-        gradient.addColorStop(0, color + '40');
+        const gradient = ctx.createRadialGradient(x, y, radius * 0.5, x, y, radius * 1.3);
+        gradient.addColorStop(0, color + '30');
         gradient.addColorStop(1, 'transparent');
         ctx.fillStyle = gradient;
         ctx.beginPath();
-        ctx.arc(x, y, radius * 1.5, 0, Math.PI * 2);
+        ctx.arc(x, y, radius * 1.3, 0, Math.PI * 2);
         ctx.fill();
 
-        // Main circle
-        ctx.fillStyle = this.colors.mapBackground;
+        // Main circle - use a light fill for visibility on white background
+        ctx.fillStyle = '#fafafa';
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.fill();
 
         // Border
         ctx.strokeStyle = color;
-        ctx.lineWidth = 3 / this.camera.zoom;
+        ctx.lineWidth = 2 / this.camera.zoom;
         ctx.stroke();
 
-        // Calculate house positions, avoiding resources inside the settlement
-        const housePositions = this.calculateHousePositions(settlement, gameState);
-
         // Draw houses as small triangles
-        ctx.fillStyle = color + '80';
+        ctx.fillStyle = color + 'cc';
         ctx.strokeStyle = color;
         ctx.lineWidth = 1 / this.camera.zoom;
 
-        const houseSize = 4 / this.camera.zoom;
+        const houseSize = 5 / this.camera.zoom;
         for (const pos of housePositions) {
             this.drawHouseTriangle(ctx, pos.x, pos.y, houseSize);
         }
@@ -202,7 +202,7 @@ class Renderer {
 
         // Walls indicator
         if (settlement.wallsLevel > 0) {
-            ctx.strokeStyle = '#9e9e9e';
+            ctx.strokeStyle = '#757575';
             ctx.lineWidth = 2 / this.camera.zoom;
             ctx.setLineDash([5 / this.camera.zoom, 3 / this.camera.zoom]);
             ctx.beginPath();
@@ -211,9 +211,9 @@ class Renderer {
             ctx.setLineDash([]);
         }
 
-        // Name label
+        // Name label - use darker color for white background
         if (this.camera.zoom >= 0.5) {
-            ctx.fillStyle = '#eeeeee';
+            ctx.fillStyle = '#333333';
             ctx.font = `${12 / this.camera.zoom}px sans-serif`;
             ctx.textAlign = 'center';
             ctx.fillText(settlement.name, x, y + radius + 15 / this.camera.zoom);
@@ -235,15 +235,15 @@ class Renderer {
 
     /**
      * Calculate house positions within a settlement, avoiding resources
+     * Returns { positions: array of {x, y}, boundingRadius: number }
      */
     calculateHousePositions(settlement, gameState) {
         const { x, y } = settlement.position;
-        const radius = settlement.radius;
 
         // Number of houses scales linearly with population (1 house per 25 people)
         const numHouses = Math.min(50, Math.floor(settlement.population / 25));
 
-        if (numHouses === 0) return [];
+        if (numHouses === 0) return { positions: [], boundingRadius: 20 };
 
         // Find resources that overlap with this settlement
         const blockedAreas = [];
@@ -252,18 +252,17 @@ class Renderer {
                 Math.pow(resource.position.x - x, 2) +
                 Math.pow(resource.position.y - y, 2)
             );
-            // If resource is inside or overlapping with settlement
-            if (dist < radius + resource.radius) {
+            // If resource is inside or near the settlement area
+            if (dist < 150) {
                 blockedAreas.push({
                     x: resource.position.x,
                     y: resource.position.y,
-                    radius: resource.radius + 5 // Add padding
+                    radius: resource.radius + 10 // Add padding
                 });
             }
         }
 
         const positions = [];
-        const usableRadius = radius * 0.85; // Don't place houses at the very edge
 
         // Use a seeded pseudo-random to get consistent positions
         const seed = settlement.id ? this.hashString(settlement.id) : 12345;
@@ -274,19 +273,26 @@ class Renderer {
             return rng / 0x7fffffff;
         };
 
+        // House spacing - increase to reduce overlap
+        const houseSpacing = 12; // Minimum distance between house centers
+        const baseRingSpacing = 15; // Base spacing between rings
+
         // Try to place houses in rings from center outward
         let placedHouses = 0;
         let ring = 0;
-        const maxRings = 6;
+        const maxRings = 8;
 
         while (placedHouses < numHouses && ring < maxRings) {
-            const ringRadius = (ring === 0) ? 0 : (usableRadius * ring / maxRings);
-            const housesInRing = (ring === 0) ? 1 : Math.max(4, Math.floor(ring * 6));
+            const ringRadius = (ring === 0) ? 0 : (ring * baseRingSpacing);
+            // Calculate how many houses fit in this ring with proper spacing
+            const circumference = 2 * Math.PI * ringRadius;
+            const housesInRing = (ring === 0) ? 1 : Math.max(3, Math.floor(circumference / houseSpacing));
             const angleOffset = nextRandom() * Math.PI * 2;
 
             for (let i = 0; i < housesInRing && placedHouses < numHouses; i++) {
                 const angle = angleOffset + (i / housesInRing) * Math.PI * 2;
-                const jitter = ring > 0 ? (nextRandom() - 0.5) * (usableRadius / maxRings) * 0.5 : 0;
+                // Reduced jitter to prevent overlap
+                const jitter = ring > 0 ? (nextRandom() - 0.5) * 4 : 0;
                 const houseX = x + Math.cos(angle) * (ringRadius + jitter);
                 const houseY = y + Math.sin(angle) * (ringRadius + jitter);
 
@@ -303,12 +309,16 @@ class Renderer {
                     }
                 }
 
-                // Also check if inside settlement boundary
-                const distToCenter = Math.sqrt(
-                    Math.pow(houseX - x, 2) + Math.pow(houseY - y, 2)
-                );
-                if (distToCenter > usableRadius) {
-                    blocked = true;
+                // Check distance from other placed houses to avoid overlap
+                for (const pos of positions) {
+                    const distToHouse = Math.sqrt(
+                        Math.pow(houseX - pos.x, 2) +
+                        Math.pow(houseY - pos.y, 2)
+                    );
+                    if (distToHouse < houseSpacing * 0.8) {
+                        blocked = true;
+                        break;
+                    }
                 }
 
                 if (!blocked) {
@@ -319,7 +329,20 @@ class Renderer {
             ring++;
         }
 
-        return positions;
+        // Calculate actual bounding radius from placed houses
+        let maxDist = 20; // Minimum radius
+        for (const pos of positions) {
+            const dist = Math.sqrt(
+                Math.pow(pos.x - x, 2) + Math.pow(pos.y - y, 2)
+            );
+            if (dist > maxDist) {
+                maxDist = dist;
+            }
+        }
+        // Add padding for the house size and border
+        const boundingRadius = maxDist + 8;
+
+        return { positions, boundingRadius };
     }
 
     /**
@@ -748,7 +771,7 @@ class Renderer {
 
         // Unit count label
         if (this.camera.zoom >= 0.7) {
-            ctx.fillStyle = '#eeeeee';
+            ctx.fillStyle = '#333333';
             ctx.font = `${10 / this.camera.zoom}px sans-serif`;
             ctx.textAlign = 'center';
             ctx.fillText(army.totalUnits.toString(), x, y + size + 12 / this.camera.zoom);
