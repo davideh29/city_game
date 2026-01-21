@@ -467,38 +467,113 @@ class Renderer {
 
         if (adjustedWaypoints.length < 2) return;
 
-        // Set line style based on completion
-        if (!road.isComplete) {
-            ctx.setLineDash([10 / this.camera.zoom, 5 / this.camera.zoom]);
-        }
+        if (road.isComplete) {
+            // Draw complete road as solid line
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width / this.camera.zoom;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
 
-        ctx.strokeStyle = color;
-        ctx.lineWidth = width / this.camera.zoom;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-
-        ctx.beginPath();
-        ctx.moveTo(adjustedWaypoints[0].x, adjustedWaypoints[0].y);
-        for (let i = 1; i < adjustedWaypoints.length; i++) {
-            ctx.lineTo(adjustedWaypoints[i].x, adjustedWaypoints[i].y);
-        }
-        ctx.stroke();
-
-        // Railway cross-ties
-        if (road.roadType === 'rail' && road.isComplete && this.camera.zoom >= 0.5) {
-            this.drawRailwayTiesAdjusted(ctx, adjustedWaypoints, road.totalLength);
-        }
-
-        ctx.setLineDash([]);
-
-        // Construction progress indicator
-        if (!road.isComplete) {
-            const progressPoint = pointAlongPolyline(road.waypoints, road.totalLength * road.constructionProgress);
-            ctx.fillStyle = '#ff9800';
             ctx.beginPath();
-            ctx.arc(progressPoint.x, progressPoint.y, 6 / this.camera.zoom, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.moveTo(adjustedWaypoints[0].x, adjustedWaypoints[0].y);
+            for (let i = 1; i < adjustedWaypoints.length; i++) {
+                ctx.lineTo(adjustedWaypoints[i].x, adjustedWaypoints[i].y);
+            }
+            ctx.stroke();
+
+            // Railway cross-ties
+            if (road.roadType === 'rail' && this.camera.zoom >= 0.5) {
+                this.drawRailwayTiesAdjusted(ctx, adjustedWaypoints, road.totalLength);
+            }
+        } else {
+            // Road is under construction - draw built portion solid, rest dashed
+
+            // First, draw the unbuilt (planned) portion as dashed
+            ctx.strokeStyle = color + '60'; // Semi-transparent
+            ctx.lineWidth = width / this.camera.zoom;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.setLineDash([10 / this.camera.zoom, 5 / this.camera.zoom]);
+
+            ctx.beginPath();
+            ctx.moveTo(adjustedWaypoints[0].x, adjustedWaypoints[0].y);
+            for (let i = 1; i < adjustedWaypoints.length; i++) {
+                ctx.lineTo(adjustedWaypoints[i].x, adjustedWaypoints[i].y);
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Now draw the built portion as solid
+            const builtWaypoints = road.getBuiltWaypoints();
+            if (builtWaypoints.length >= 2) {
+                // Adjust built waypoints for settlement boundaries
+                const adjustedBuiltWaypoints = this.getAdjustedRoadWaypoints(builtWaypoints, gameState);
+
+                if (adjustedBuiltWaypoints.length >= 2) {
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = width / this.camera.zoom;
+
+                    ctx.beginPath();
+                    ctx.moveTo(adjustedBuiltWaypoints[0].x, adjustedBuiltWaypoints[0].y);
+                    for (let i = 1; i < adjustedBuiltWaypoints.length; i++) {
+                        ctx.lineTo(adjustedBuiltWaypoints[i].x, adjustedBuiltWaypoints[i].y);
+                    }
+                    ctx.stroke();
+
+                    // Railway cross-ties for built portion
+                    if (road.roadType === 'rail' && this.camera.zoom >= 0.5) {
+                        this.drawRailwayTiesAdjusted(ctx, adjustedBuiltWaypoints, road.builtLength);
+                    }
+                }
+            }
+
+            // Draw construction symbol at the build point
+            this.drawConstructionSymbol(ctx, road);
         }
+    }
+
+    /**
+     * Draw an animated construction symbol at the road's current build point
+     */
+    drawConstructionSymbol(ctx, road) {
+        const constructionPoint = road.getConstructionPoint();
+        if (!constructionPoint) return;
+
+        const { x, y } = constructionPoint;
+        const time = Date.now() / 300; // Animation speed
+        const baseSize = 10 / this.camera.zoom;
+
+        // Pulsing orange circle
+        const pulseScale = 1 + Math.sin(time) * 0.2;
+        const size = baseSize * pulseScale;
+
+        // Outer glow
+        ctx.fillStyle = 'rgba(255, 152, 0, 0.3)';
+        ctx.beginPath();
+        ctx.arc(x, y, size * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Inner filled circle
+        ctx.fillStyle = '#ff9800';
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Construction icon (small pickaxe/tool shape)
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2 / this.camera.zoom;
+        ctx.lineCap = 'round';
+
+        // Draw a simple construction tool shape
+        const iconSize = size * 0.6;
+        ctx.beginPath();
+        // Handle
+        ctx.moveTo(x - iconSize, y + iconSize);
+        ctx.lineTo(x + iconSize * 0.3, y - iconSize * 0.3);
+        // Head
+        ctx.moveTo(x, y - iconSize * 0.5);
+        ctx.lineTo(x + iconSize * 0.5, y);
+        ctx.stroke();
     }
 
     /**

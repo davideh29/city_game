@@ -414,6 +414,73 @@ class TestGameScreenshots:
         self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
+    def test_road_under_construction(self, ensure_screenshots_dir):
+        """
+        Capture a road that is currently under construction.
+        Shows: Partially built road with construction symbol at the build point,
+        solid portion for built section, and dashed preview for unbuilt section.
+        """
+        output_path = ensure_screenshots_dir / 'road_under_construction.png'
+
+        actions = [
+            {'type': 'wait', 'ms': 1000},
+            # Build a new long road using JavaScript that will take time to complete
+            {'type': 'evaluate', 'script': '''
+                if(window.game) {
+                    // Find player's first settlement
+                    const settlements = Object.values(game.state.settlements);
+                    const playerSettlement = settlements.find(s => s.ownerId === game.playerId);
+
+                    if (playerSettlement) {
+                        // Create a long road heading left/up from the settlement
+                        // (away from the map center where mountains are)
+                        const startX = playerSettlement.position.x;
+                        const startY = playerSettlement.position.y;
+
+                        // Create waypoints for a road that goes 500 units to the left
+                        const waypoints = [
+                            new Vec2(startX, startY),
+                            new Vec2(startX - 150, startY - 50),
+                            new Vec2(startX - 300, startY - 100),
+                            new Vec2(startX - 450, startY - 50)
+                        ];
+
+                        // Build the road (starts with builtLength = 0)
+                        const newRoad = game.buildRoad(waypoints, 'dirt');
+
+                        if (newRoad) {
+                            // Run a few ticks to partially build the road
+                            // With ROAD_CONSTRUCTION_SPEED of 20 units/tick,
+                            // running 8 ticks builds about 160 units of the ~550 unit road
+                            for (let i = 0; i < 8; i++) {
+                                game.processConstruction();
+                            }
+
+                            // Get the construction point and center camera on it
+                            const constructionPoint = newRoad.getConstructionPoint();
+                            if (constructionPoint) {
+                                camera.centerOn(constructionPoint.x, constructionPoint.y);
+                                camera.setZoom(1.2);
+                            }
+                        }
+                    }
+                }
+            '''},
+            {'type': 'wait', 'ms': 500},
+        ]
+
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
+
+        self._capture_and_compare(output_path, capture)
+        assert output_path.exists()
+
     def test_different_resolutions(self, ensure_screenshots_dir):
         """
         Test that the game renders correctly at different resolutions.

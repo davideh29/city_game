@@ -311,7 +311,16 @@ class Road {
         this.waypoints = (data.waypoints || []).map(wp => wp instanceof Vec2 ? wp : new Vec2(wp.x, wp.y));
         this.roadType = data.roadType || 'dirt';
         this.ownerId = data.ownerId || null;
-        this.constructionProgress = data.constructionProgress ?? 1.0;
+        // Track actual built length (in world units) for gradual construction
+        // If builtLength is provided, use it; otherwise derive from legacy constructionProgress
+        if (data.builtLength !== undefined) {
+            this._builtLength = data.builtLength;
+        } else if (data.constructionProgress !== undefined) {
+            // Legacy support: convert percentage to length
+            this._builtLength = data.constructionProgress * this.totalLength;
+        } else {
+            this._builtLength = this.totalLength; // Default to complete
+        }
         this.condition = data.condition ?? 1.0;
     }
 
@@ -323,8 +332,68 @@ class Road {
         return polylineLength(this.waypoints);
     }
 
+    get builtLength() {
+        return this._builtLength;
+    }
+
+    set builtLength(value) {
+        this._builtLength = Math.min(value, this.totalLength);
+    }
+
+    get constructionProgress() {
+        const total = this.totalLength;
+        if (total === 0) return 1.0;
+        return Math.min(1.0, this._builtLength / total);
+    }
+
     get isComplete() {
-        return this.constructionProgress >= 1.0;
+        return this._builtLength >= this.totalLength;
+    }
+
+    /**
+     * Get the waypoints that represent the currently built portion of the road
+     * Returns waypoints from start up to the current construction point
+     */
+    getBuiltWaypoints() {
+        if (this.isComplete) return this.waypoints;
+        if (this._builtLength <= 0) return [this.waypoints[0]];
+
+        const result = [];
+        let remaining = this._builtLength;
+
+        for (let i = 0; i < this.waypoints.length - 1; i++) {
+            result.push(this.waypoints[i]);
+
+            const dx = this.waypoints[i + 1].x - this.waypoints[i].x;
+            const dy = this.waypoints[i + 1].y - this.waypoints[i].y;
+            const segLen = Math.sqrt(dx * dx + dy * dy);
+
+            if (remaining <= segLen) {
+                // Construction point is within this segment
+                const t = remaining / segLen;
+                result.push(new Vec2(
+                    this.waypoints[i].x + dx * t,
+                    this.waypoints[i].y + dy * t
+                ));
+                break;
+            }
+            remaining -= segLen;
+        }
+
+        // If we went through all segments, include the last point
+        if (remaining >= 0 && result.length === this.waypoints.length) {
+            return this.waypoints;
+        }
+
+        return result;
+    }
+
+    /**
+     * Get the current construction point (where workers are building)
+     */
+    getConstructionPoint() {
+        if (this.isComplete) return null;
+        return pointAlongPolyline(this.waypoints, this._builtLength);
     }
 
     toJSON() {
@@ -333,7 +402,8 @@ class Road {
             waypoints: this.waypoints.map(wp => wp.toJSON()),
             roadType: this.roadType,
             ownerId: this.ownerId,
-            constructionProgress: this.constructionProgress,
+            builtLength: this._builtLength,
+            constructionProgress: this.constructionProgress, // For backwards compatibility
             condition: this.condition
         };
     }

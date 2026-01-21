@@ -67,6 +67,7 @@ class InputHandler {
             } else if (this.currentTool === 'road') {
                 // Add waypoint for road building
                 this.renderer.addRoadPreviewWaypoint(this.worldPos);
+                this.updateRoadToolIndicator();
             } else if (this.currentTool === 'building') {
                 // Try to place building
                 this.tryPlaceBuilding(this.worldPos);
@@ -94,6 +95,10 @@ class InputHandler {
         // Update road preview
         if (this.currentTool === 'road' && this.renderer.roadPreview) {
             this.renderer.updateRoadPreviewCurrent(this.worldPos);
+            // Update time estimate in tool indicator
+            if (this.renderer.roadPreview.waypoints.length > 0) {
+                this.updateRoadToolIndicator();
+            }
         }
     }
 
@@ -293,10 +298,8 @@ class InputHandler {
             this.renderer.startRoadPreview(this.roadType);
             this.canvas.classList.add('crosshair');
 
-            // Show tool indicator
-            const indicator = document.getElementById('tool-indicator');
-            indicator.textContent = `Building ${RoadType[this.roadType.toUpperCase()].name} - Click to place waypoints, double-click to finish`;
-            indicator.classList.remove('hidden');
+            // Show tool indicator with initial message
+            this.updateRoadToolIndicator();
         } else if (tool === 'building') {
             this.buildingType = options.buildingType;
             this.canvas.classList.add('crosshair');
@@ -428,6 +431,50 @@ class InputHandler {
         if (window.ui) {
             window.ui.switchTab(tabName);
         }
+    }
+
+    /**
+     * Update the road building tool indicator with length and time estimate
+     */
+    updateRoadToolIndicator() {
+        const indicator = document.getElementById('tool-indicator');
+        const roadTypeName = RoadType[this.roadType.toUpperCase()].name;
+
+        if (!this.renderer.roadPreview || this.renderer.roadPreview.waypoints.length === 0) {
+            indicator.textContent = `Building ${roadTypeName} - Click to place waypoints, double-click to finish`;
+            indicator.classList.remove('hidden');
+            return;
+        }
+
+        // Calculate total length including current mouse position
+        const waypoints = [...this.renderer.roadPreview.waypoints];
+        if (this.renderer.roadPreview.currentPoint) {
+            waypoints.push(this.renderer.roadPreview.currentPoint);
+        }
+
+        let totalLength = 0;
+        for (let i = 0; i < waypoints.length - 1; i++) {
+            const dx = waypoints[i + 1].x - waypoints[i].x;
+            const dy = waypoints[i + 1].y - waypoints[i].y;
+            totalLength += Math.sqrt(dx * dx + dy * dy);
+        }
+
+        // Calculate estimated ticks to complete
+        const constructionSpeed = GAME_CONSTANTS.ROAD_CONSTRUCTION_SPEED;
+        const estimatedTicks = Math.ceil(totalLength / constructionSpeed);
+
+        // Format time estimate
+        let timeStr;
+        if (estimatedTicks === 0) {
+            timeStr = 'instant';
+        } else if (estimatedTicks === 1) {
+            timeStr = '1 tick';
+        } else {
+            timeStr = `${estimatedTicks} ticks`;
+        }
+
+        indicator.textContent = `Building ${roadTypeName} - Length: ${Math.round(totalLength)} | Est. time: ${timeStr} | Double-click to finish`;
+        indicator.classList.remove('hidden');
     }
 
     /**

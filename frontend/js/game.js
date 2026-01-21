@@ -9,7 +9,8 @@ const GAME_CONSTANTS = {
     STARVATION_RATE: 0.005,
     INCOME_PER_PERSON: 0.5,
     CASUALTY_RATE: 0.05,
-    CONSTRUCTION_RATE: 0.1, // Progress per tick
+    CONSTRUCTION_RATE: 0.1, // Progress per tick (for buildings)
+    ROAD_CONSTRUCTION_SPEED: 20, // Units of road built per tick
     BASE_ARMY_SPEED: 5, // Units per tick
     OFF_ROAD_SPEED_MULT: 0.2,
 
@@ -572,10 +573,10 @@ class Game {
      * Process construction progress
      */
     processConstruction() {
-        // Roads
+        // Roads - build gradually by extending the built length
         for (const road of Object.values(this.state.roads)) {
             if (!road.isComplete) {
-                road.constructionProgress = Math.min(1.0, road.constructionProgress + GAME_CONSTANTS.CONSTRUCTION_RATE);
+                road.builtLength = road.builtLength + GAME_CONSTANTS.ROAD_CONSTRUCTION_SPEED;
             }
         }
 
@@ -1014,7 +1015,7 @@ class Game {
             waypoints: waypoints.map(wp => wp.clone()),
             roadType: roadType,
             ownerId: ownerId,
-            constructionProgress: 0
+            builtLength: 0 // Start with nothing built
         });
 
         this.state.roads[road.id] = road;
