@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crossroads</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header Bar -->
+        <header id="header">
+            <div class="logo">CROSSROADS</div>
+            <div class="header-actions">
+                <button id="btn-settings" class="icon-btn" title="Settings">&#9881;</button>
+                <button id="btn-help" class="icon-btn" title="Help">?</button>
+                <button id="btn-menu" class="icon-btn" title="Menu">&#8801;</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main id="main-content">
+            <!-- Game Map Canvas -->
+            <div id="map-container">
+                <canvas id="game-canvas"></canvas>
+                <!-- Tool overlay -->
+                <div id="tool-indicator" class="hidden"></div>
+            </div>
+
+            <!-- Sidebar -->
+            <aside id="sidebar">
+                <!-- Sidebar Tabs -->
+                <div id="sidebar-tabs">
+                    <button class="tab-btn active" data-tab="settlements">Settlements</button>
+                    <button class="tab-btn" data-tab="armies">Armies</button>
+                    <button class="tab-btn" data-tab="research">Research</button>
+                    <button class="tab-btn" data-tab="build">Build</button>
+                </div>
+
+                <!-- Sidebar Content -->
+                <div id="sidebar-content">
+                    <!-- Settlements Tab -->
+                    <div id="tab-settlements" class="tab-content active">
+                        <h3>Settlements</h3>
+                        <div id="settlements-list" class="entity-list"></div>
+                    </div>
+
+                    <!-- Armies Tab -->
+                    <div id="tab-armies" class="tab-content">
+                        <h3>Armies</h3>
+                        <div id="armies-list" class="entity-list"></div>
+                    </div>
+
+                    <!-- Research Tab -->
+                    <div id="tab-research" class="tab-content">
+                        <h3>Research</h3>
+                        <div id="current-research"></div>
+                        <div id="available-research" class="entity-list"></div>
+                    </div>
+
+                    <!-- Build Tab -->
+                    <div id="tab-build" class="tab-content">
+                        <h3>Build</h3>
+                        <div id="build-options" class="build-grid">
+                            <button class="build-btn" data-build="road-dirt" title="Dirt Path">
+                                <span class="build-icon">&#9473;</span>
+                                <span class="build-label">Dirt Path</span>
+                            </button>
+                            <button class="build-btn" data-build="road-stone" title="Stone Road" disabled>
+                                <span class="build-icon">&#9552;</span>
+                                <span class="build-label">Stone Road</span>
+                            </button>
+                            <button class="build-btn" data-build="road-paved" title="Paved Road" disabled>
+                                <span class="build-icon">&#9552;</span>
+                                <span class="build-label">Paved</span>
+                            </button>
+                            <button class="build-btn" data-build="lumber-camp" title="Lumber Camp">
+                                <span class="build-icon">&#127794;</span>
+                                <span class="build-label">Lumber Camp</span>
+                            </button>
+                            <button class="build-btn" data-build="quarry" title="Quarry">
+                                <span class="build-icon">&#9962;</span>
+                                <span class="build-label">Quarry</span>
+                            </button>
+                            <button class="build-btn" data-build="mine" title="Mine">
+                                <span class="build-icon">&#9935;</span>
+                                <span class="build-label">Mine</span>
+                            </button>
+                            <button class="build-btn" data-build="farm" title="Farm">
+                                <span class="build-icon">&#127806;</span>
+                                <span class="build-label">Farm</span>
+                            </button>
+                        </div>
+                        <div id="build-info" class="info-panel hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Selection Details Panel -->
+                <div id="selection-panel" class="hidden">
+                    <div id="selection-header">
+                        <h3 id="selection-title">Selected</h3>
+                        <button id="selection-close" class="icon-btn">&times;</button>
+                    </div>
+                    <div id="selection-content"></div>
+                    <div id="selection-actions"></div>
+                </div>
+            </aside>
+        </main>
+
+        <!-- Bottom Bar -->
+        <footer id="bottom-bar">
+            <div id="resources-display">
+                <span class="resource" title="Food">
+                    <span class="resource-icon">&#127806;</span>
+                    <span id="res-food">0</span>
+                </span>
+                <span class="resource" title="Wood">
+                    <span class="resource-icon">&#129717;</span>
+                    <span id="res-wood">0</span>
+                </span>
+                <span class="resource" title="Stone">
+                    <span class="resource-icon">&#129704;</span>
+                    <span id="res-stone">0</span>
+                </span>
+                <span class="resource" title="Iron">
+                    <span class="resource-icon">&#9881;</span>
+                    <span id="res-iron">0</span>
+                </span>
+                <span class="resource" title="Research/tick">
+                    <span class="resource-icon">&#128300;</span>
+                    <span id="res-research">0</span>/tick
+                </span>
+            </div>
+            <div id="game-controls">
+                <span id="tick-display">Tick: <span id="tick-counter">0</span></span>
+                <button id="btn-speed-down" class="control-btn" title="Slower">-</button>
+                <button id="btn-play-pause" class="control-btn play" title="Play/Pause">&#9654;</button>
+                <button id="btn-speed-up" class="control-btn" title="Faster">+</button>
+                <span id="speed-display">1x</span>
+            </div>
+        </footer>
+
+        <!-- Modals -->
+        <div id="modal-overlay" class="hidden">
+            <div id="modal-container">
+                <div id="modal-header">
+                    <h2 id="modal-title">Modal</h2>
+                    <button id="modal-close" class="icon-btn">&times;</button>
+                </div>
+                <div id="modal-content"></div>
+                <div id="modal-actions"></div>
+            </div>
+        </div>
+
+        <!-- Victory/Defeat Screen -->
+        <div id="game-over-screen" class="hidden">
+            <div class="game-over-content">
+                <h1 id="game-over-title">Victory!</h1>
+                <p id="game-over-message"></p>
+                <button id="btn-new-game" class="primary-btn">New Game</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/utils.js"></script>
+    <script src="js/models.js"></script>
+    <script src="js/camera.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/input.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/tech_tree.js"></script>
+    <script src="js/ai.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
