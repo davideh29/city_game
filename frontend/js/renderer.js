@@ -11,8 +11,8 @@ class Renderer {
 
         // Colors from design doc
         this.colors = {
-            mapBackground: '#ffffff',
-            gridLines: '#e0e0e0',
+            mapBackground: '#e8f5e9',  // Light green background
+            gridLines: '#c8e6c9',      // Slightly darker green grid
             selection: '#4fc3f7',
             selectionGlow: 'rgba(79, 195, 247, 0.3)',
 
@@ -27,6 +27,13 @@ class Renderer {
                 stone: '#8d6e63',
                 iron: '#78909c',
                 fertile: '#558b2f'
+            },
+
+            mountains: {
+                fill: '#9e9e9e',       // Gray mountain fill
+                stroke: '#757575',      // Darker gray stroke
+                snow: '#fafafa',        // Snow caps
+                circle: '#bdbdbd'       // Circle outline
             },
 
             roads: {
@@ -77,6 +84,13 @@ class Renderer {
 
         // Draw grid (optional, subtle)
         this.drawGrid(ctx);
+
+        // Draw mountain ranges (terrain layer, below roads)
+        if (gameState.mountainRanges) {
+            for (const range of Object.values(gameState.mountainRanges)) {
+                this.drawMountainRange(ctx, range);
+            }
+        }
 
         // Draw roads first (under everything)
         for (const road of Object.values(gameState.roads)) {
@@ -234,6 +248,74 @@ class Renderer {
     }
 
     /**
+     * Draw a mountain range
+     */
+    drawMountainRange(ctx, range) {
+        if (!range.circles || range.circles.length === 0) return;
+
+        // Draw each mountain circle in the range
+        for (const circle of range.circles) {
+            this.drawMountainCircle(ctx, circle);
+        }
+    }
+
+    /**
+     * Draw a single mountain circle with peaks inside
+     */
+    drawMountainCircle(ctx, circle) {
+        const { x, y, radius, peaks } = circle;
+
+        // Draw the containing circle (semi-transparent)
+        ctx.fillStyle = this.colors.mountains.circle + '40';
+        ctx.strokeStyle = this.colors.mountains.circle;
+        ctx.lineWidth = 1 / this.camera.zoom;
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Draw mountain peaks inside the circle
+        if (peaks && peaks.length > 0) {
+            for (const peak of peaks) {
+                this.drawMountainPeak(ctx, peak.x, peak.y, radius * 0.25 * peak.scale);
+            }
+        } else {
+            // Fallback: draw default peaks
+            this.drawMountainPeak(ctx, x, y, radius * 0.35);
+            this.drawMountainPeak(ctx, x - radius * 0.3, y + radius * 0.15, radius * 0.25);
+            this.drawMountainPeak(ctx, x + radius * 0.3, y + radius * 0.15, radius * 0.25);
+        }
+    }
+
+    /**
+     * Draw a single mountain peak (triangle with snow cap)
+     */
+    drawMountainPeak(ctx, px, py, size) {
+        // Main mountain body
+        ctx.fillStyle = this.colors.mountains.fill;
+        ctx.strokeStyle = this.colors.mountains.stroke;
+        ctx.lineWidth = 1 / this.camera.zoom;
+
+        ctx.beginPath();
+        ctx.moveTo(px, py - size);              // Peak
+        ctx.lineTo(px - size * 0.8, py + size); // Bottom left
+        ctx.lineTo(px + size * 0.8, py + size); // Bottom right
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Snow cap on peak
+        ctx.fillStyle = this.colors.mountains.snow;
+        ctx.beginPath();
+        ctx.moveTo(px, py - size);                      // Peak
+        ctx.lineTo(px - size * 0.25, py - size * 0.4);  // Left snow line
+        ctx.lineTo(px + size * 0.25, py - size * 0.4);  // Right snow line
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    /**
      * Calculate house positions within a settlement, avoiding resources
      * Returns { positions: array of {x, y}, boundingRadius: number }
      */
@@ -365,6 +447,16 @@ class Renderer {
         const { x, y } = resource.position;
         const radius = resource.radius;
         const color = this.colors.resources[resource.resourceType] || '#888888';
+
+        // Draw containing circle for the resource
+        ctx.fillStyle = color + '15';  // Very light fill
+        ctx.strokeStyle = color + '60'; // Semi-transparent stroke
+        ctx.lineWidth = 2 / this.camera.zoom;
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
 
         // Different shapes for different resource types
         switch (resource.resourceType) {
