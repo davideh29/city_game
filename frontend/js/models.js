@@ -176,6 +176,96 @@ class Settlement {
 }
 
 /**
+ * Mountain Range class
+ * Represents a chain of mountains that block road construction
+ */
+class MountainRange {
+    constructor(data = {}) {
+        this.id = data.id || generateId();
+        this.name = data.name || 'Mountain Range';
+        // Waypoints define the path of the mountain range
+        this.waypoints = (data.waypoints || []).map(wp => wp instanceof Vec2 ? wp : new Vec2(wp.x, wp.y));
+        // Pre-calculated circles for collision and rendering
+        this.circles = data.circles || [];
+        // Base radius for each mountain circle
+        this.baseRadius = data.baseRadius || 40;
+        // How much circles overlap (0-1)
+        this.overlapFactor = data.overlapFactor || 0.4;
+    }
+
+    /**
+     * Generate the circles for this mountain range
+     * Call this after setting waypoints
+     */
+    generateCircles(seed) {
+        if (typeof Geometry !== 'undefined') {
+            this.circles = Geometry.generateMountainRangeCircles(
+                this.waypoints,
+                this.baseRadius,
+                this.overlapFactor,
+                seed || this.hashWaypoints()
+            );
+            // Generate peaks for each circle
+            for (const circle of this.circles) {
+                circle.peaks = Geometry.generateMountainPeaks(
+                    circle.x,
+                    circle.y,
+                    circle.radius * 0.8,
+                    3 + Math.floor(Math.random() * 3),
+                    seed || this.hashWaypoints() + circle.x
+                );
+            }
+        }
+        return this.circles;
+    }
+
+    /**
+     * Simple hash of waypoints for deterministic generation
+     */
+    hashWaypoints() {
+        let hash = 0;
+        for (const wp of this.waypoints) {
+            hash = ((hash << 5) - hash) + Math.floor(wp.x) + Math.floor(wp.y);
+            hash = hash & hash;
+        }
+        return Math.abs(hash);
+    }
+
+    /**
+     * Get bounding box of the mountain range
+     */
+    getBounds() {
+        let minX = Infinity, minY = Infinity;
+        let maxX = -Infinity, maxY = -Infinity;
+
+        for (const circle of this.circles) {
+            minX = Math.min(minX, circle.x - circle.radius);
+            minY = Math.min(minY, circle.y - circle.radius);
+            maxX = Math.max(maxX, circle.x + circle.radius);
+            maxY = Math.max(maxY, circle.y + circle.radius);
+        }
+
+        return { minX, minY, maxX, maxY };
+    }
+
+    toJSON() {
+        return {
+            id: this.id,
+            name: this.name,
+            waypoints: this.waypoints.map(wp => wp.toJSON()),
+            circles: this.circles.map(c => ({
+                x: c.x,
+                y: c.y,
+                radius: c.radius,
+                peaks: c.peaks
+            })),
+            baseRadius: this.baseRadius,
+            overlapFactor: this.overlapFactor
+        };
+    }
+}
+
+/**
  * Natural Resource class
  */
 class NaturalResource {
@@ -476,6 +566,7 @@ if (typeof module !== 'undefined' && module.exports) {
         BuildingType,
         UnitType,
         Settlement,
+        MountainRange,
         NaturalResource,
         Road,
         Building,

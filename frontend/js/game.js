@@ -51,6 +51,7 @@ class Game {
             tick: 0,
             settlements: {},
             resources: {},
+            mountainRanges: {},
             roads: {},
             buildings: {},
             armies: {},
@@ -123,12 +124,118 @@ class Game {
         aiSettlement.isCapital = true;
         this.state.settlements[aiSettlement.id] = aiSettlement;
 
+        // Generate mountain ranges first (they affect resource placement)
+        this.generateMountainRanges(mapWidth, mapHeight);
+
         // Generate resources around the map
         this.generateResources(mapWidth, mapHeight);
 
         // Create initial roads from settlements to nearby resources
         this.createInitialRoads(playerSettlement);
         this.createInitialRoads(aiSettlement);
+    }
+
+    /**
+     * Generate mountain ranges across the map
+     */
+    generateMountainRanges(mapWidth, mapHeight) {
+        // Create 2-3 mountain ranges that span across the map
+        const numRanges = globalRng.nextInt(2, 3);
+
+        for (let i = 0; i < numRanges; i++) {
+            const range = this.createMountainRange(mapWidth, mapHeight, i);
+            if (range) {
+                this.state.mountainRanges[range.id] = range;
+            }
+        }
+    }
+
+    /**
+     * Create a single mountain range
+     */
+    createMountainRange(mapWidth, mapHeight, index) {
+        // Generate waypoints for the mountain range path
+        // Avoid the areas where settlements will be placed (left quarter and right quarter)
+        const waypoints = [];
+
+        // Mountain ranges go roughly horizontal or diagonal across the map
+        // Avoid player starting areas (left 30% and right 30%)
+        const safeZoneLeft = mapWidth * 0.35;
+        const safeZoneRight = mapWidth * 0.65;
+
+        if (index === 0) {
+            // First range: top-to-bottom on the left side of center
+            const startX = globalRng.nextFloat(safeZoneLeft, mapWidth * 0.5);
+            const startY = globalRng.nextFloat(100, 300);
+            const endX = globalRng.nextFloat(safeZoneLeft - 100, mapWidth * 0.45);
+            const endY = globalRng.nextFloat(mapHeight - 400, mapHeight - 100);
+
+            waypoints.push(new Vec2(startX, startY));
+            // Add midpoints for natural curve
+            const midY = (startY + endY) / 2;
+            waypoints.push(new Vec2(
+                startX + globalRng.nextFloat(-100, 100),
+                midY + globalRng.nextFloat(-100, 100)
+            ));
+            waypoints.push(new Vec2(endX, endY));
+        } else if (index === 1) {
+            // Second range: top-to-bottom on the right side of center
+            const startX = globalRng.nextFloat(mapWidth * 0.5, safeZoneRight);
+            const startY = globalRng.nextFloat(100, 400);
+            const endX = globalRng.nextFloat(mapWidth * 0.55, safeZoneRight + 100);
+            const endY = globalRng.nextFloat(mapHeight - 500, mapHeight - 100);
+
+            waypoints.push(new Vec2(startX, startY));
+            const midY = (startY + endY) / 2;
+            waypoints.push(new Vec2(
+                startX + globalRng.nextFloat(-80, 80),
+                midY + globalRng.nextFloat(-80, 80)
+            ));
+            waypoints.push(new Vec2(endX, endY));
+        } else {
+            // Third range: shorter, in the middle
+            const centerX = mapWidth / 2;
+            const centerY = mapHeight / 2;
+            const startX = centerX + globalRng.nextFloat(-200, -50);
+            const startY = centerY + globalRng.nextFloat(-200, -100);
+            const endX = centerX + globalRng.nextFloat(50, 200);
+            const endY = centerY + globalRng.nextFloat(100, 200);
+
+            waypoints.push(new Vec2(startX, startY));
+            waypoints.push(new Vec2(endX, endY));
+        }
+
+        // Make sure mountain range doesn't overlap with settlements
+        for (const settlement of Object.values(this.state.settlements)) {
+            for (const wp of waypoints) {
+                const dist = wp.distanceTo(settlement.position);
+                if (dist < 150) {
+                    // Too close to settlement, skip this range
+                    return null;
+                }
+            }
+        }
+
+        const range = new MountainRange({
+            name: this.generateMountainRangeName(index),
+            waypoints: waypoints,
+            baseRadius: globalRng.nextFloat(35, 50),
+            overlapFactor: globalRng.nextFloat(0.35, 0.5)
+        });
+
+        // Generate the circles
+        range.generateCircles(globalRng.nextInt(1, 100000));
+
+        return range;
+    }
+
+    /**
+     * Generate a name for a mountain range
+     */
+    generateMountainRangeName(index) {
+        const adjectives = ['Great', 'Iron', 'Stone', 'Gray', 'Misty', 'White', 'Dark', 'High'];
+        const nouns = ['Mountains', 'Peaks', 'Ridge', 'Range', 'Heights', 'Spine'];
+        return globalRng.nextElement(adjectives) + ' ' + globalRng.nextElement(nouns);
     }
 
     /**
@@ -162,6 +269,23 @@ class Game {
                     if (resource.position.distanceTo(settlement.position) < 100) {
                         tooClose = true;
                         break;
+                    }
+                }
+
+                // Make sure resources aren't inside mountain ranges
+                if (!tooClose) {
+                    for (const range of Object.values(this.state.mountainRanges)) {
+                        for (const circle of range.circles) {
+                            const dist = Math.sqrt(
+                                Math.pow(resource.position.x - circle.x, 2) +
+                                Math.pow(resource.position.y - circle.y, 2)
+                            );
+                            if (dist < circle.radius + resource.radius) {
+                                tooClose = true;
+                                break;
+                            }
+                        }
+                        if (tooClose) break;
                     }
                 }
 
@@ -876,6 +1000,16 @@ class Game {
     buildRoad(waypoints, roadType, ownerId = null) {
         ownerId = ownerId || this.playerId;
 
+        // Check if road collides with mountains or resources
+        const collision = this.checkRoadCollision(waypoints);
+        if (collision) {
+            this.dispatchEvent('actionFailed', {
+                reason: `Cannot build road through ${collision.type}`,
+                collision: collision
+            });
+            return null;
+        }
+
         const road = new Road({
             waypoints: waypoints.map(wp => wp.clone()),
             roadType: roadType,
@@ -885,6 +1019,81 @@ class Game {
 
         this.state.roads[road.id] = road;
         return road;
+    }
+
+    /**
+     * Check if a road path collides with mountains or resources
+     * @param {Array} waypoints - Road waypoints
+     * @returns {Object|null} Collision info or null if no collision
+     */
+    checkRoadCollision(waypoints) {
+        if (waypoints.length < 2) return null;
+
+        // Check mountain ranges
+        for (const range of Object.values(this.state.mountainRanges)) {
+            for (let i = 0; i < waypoints.length - 1; i++) {
+                const x1 = waypoints[i].x;
+                const y1 = waypoints[i].y;
+                const x2 = waypoints[i + 1].x;
+                const y2 = waypoints[i + 1].y;
+
+                for (const circle of range.circles) {
+                    if (this.lineIntersectsCircle(x1, y1, x2, y2, circle.x, circle.y, circle.radius)) {
+                        return { type: 'mountain', entity: range };
+                    }
+                }
+            }
+        }
+
+        // Check resources
+        for (const resource of Object.values(this.state.resources)) {
+            for (let i = 0; i < waypoints.length - 1; i++) {
+                const x1 = waypoints[i].x;
+                const y1 = waypoints[i].y;
+                const x2 = waypoints[i + 1].x;
+                const y2 = waypoints[i + 1].y;
+
+                // Use resource radius with some padding
+                if (this.lineIntersectsCircle(x1, y1, x2, y2,
+                    resource.position.x, resource.position.y, resource.radius)) {
+                    return { type: 'resource', entity: resource };
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Check if a line segment intersects a circle
+     */
+    lineIntersectsCircle(x1, y1, x2, y2, cx, cy, r) {
+        // Vector from line start to circle center
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const fx = x1 - cx;
+        const fy = y1 - cy;
+
+        const a = dx * dx + dy * dy;
+        const b = 2 * (fx * dx + fy * dy);
+        const c = fx * fx + fy * fy - r * r;
+
+        let discriminant = b * b - 4 * a * c;
+
+        if (discriminant < 0) {
+            return false;
+        }
+
+        discriminant = Math.sqrt(discriminant);
+
+        const t1 = (-b - discriminant) / (2 * a);
+        const t2 = (-b + discriminant) / (2 * a);
+
+        // Check if either intersection point is within the segment
+        if (t1 >= 0 && t1 <= 1) return true;
+        if (t2 >= 0 && t2 <= 1) return true;
+
+        return false;
     }
 
     removeRoad(roadId) {
