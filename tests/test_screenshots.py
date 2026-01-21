@@ -2,11 +2,13 @@
 """
 Screenshot tests for Crossroads game.
 Generates screenshots of various game states for visual review.
+Only updates screenshots if there's an actual pixel-level change.
 """
 
 import os
 import sys
 import pytest
+import tempfile
 from pathlib import Path
 
 # Add scripts directory to path
@@ -20,6 +22,71 @@ HTML_PATH = PROJECT_ROOT / 'frontend' / 'index.html'
 SCREENSHOTS_DIR = PROJECT_ROOT / 'screenshots'
 
 
+def images_are_identical(path1: Path, path2: Path) -> bool:
+    """
+    Compare two images at the pixel level.
+    Returns True if images are identical, False otherwise.
+    """
+    try:
+        from PIL import Image
+        import hashlib
+
+        if not path1.exists() or not path2.exists():
+            return False
+
+        # Load both images
+        img1 = Image.open(path1)
+        img2 = Image.open(path2)
+
+        # Quick check: different sizes means different images
+        if img1.size != img2.size:
+            return False
+
+        # Quick check: different modes means different images
+        if img1.mode != img2.mode:
+            return False
+
+        # Compare raw pixel data
+        return img1.tobytes() == img2.tobytes()
+
+    except ImportError:
+        # Pillow not available, fall back to file hash comparison
+        import hashlib
+
+        if not path1.exists() or not path2.exists():
+            return False
+
+        def file_hash(path):
+            with open(path, 'rb') as f:
+                return hashlib.sha256(f.read()).hexdigest()
+
+        return file_hash(path1) == file_hash(path2)
+    except Exception:
+        return False
+
+
+def save_screenshot_if_changed(temp_path: Path, final_path: Path) -> bool:
+    """
+    Save screenshot only if it differs from the existing one.
+    Returns True if the file was updated, False if unchanged.
+    """
+    import shutil
+
+    if not final_path.exists():
+        # No existing screenshot, save the new one
+        shutil.move(str(temp_path), str(final_path))
+        return True
+
+    if images_are_identical(temp_path, final_path):
+        # Images are identical, no need to update
+        temp_path.unlink()  # Clean up temp file
+        return False
+
+    # Images differ, update the screenshot
+    shutil.move(str(temp_path), str(final_path))
+    return True
+
+
 @pytest.fixture(scope='module')
 def ensure_screenshots_dir():
     """Ensure screenshots directory exists."""
@@ -30,6 +97,22 @@ def ensure_screenshots_dir():
 class TestGameScreenshots:
     """Test class for generating game screenshots."""
 
+    def _capture_and_compare(self, final_path: Path, capture_func, **kwargs):
+        """
+        Helper to capture screenshot to temp file and only save if changed.
+        Returns True if file was updated, False if unchanged.
+        """
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            temp_path = Path(tmp.name)
+
+        capture_func(temp_path=str(temp_path), **kwargs)
+
+        assert temp_path.exists(), "Screenshot was not created"
+        assert temp_path.stat().st_size > 0, "Screenshot file is empty"
+
+        was_updated = save_screenshot_if_changed(temp_path, final_path)
+        return was_updated
+
     def test_initial_game_state(self, ensure_screenshots_dir):
         """
         Capture the initial game state after loading.
@@ -37,16 +120,17 @@ class TestGameScreenshots:
         """
         output_path = ensure_screenshots_dir / 'game_initial_state.png'
 
-        screenshot_html(
-            str(HTML_PATH),
-            str(output_path),
-            width=1400,
-            height=900,
-            wait_time=1500
-        )
+        def capture(temp_path):
+            screenshot_html(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                wait_time=1500
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists(), "Screenshot was not created"
-        assert output_path.stat().st_size > 0, "Screenshot file is empty"
 
     def test_settlements_tab(self, ensure_screenshots_dir):
         """
@@ -61,14 +145,16 @@ class TestGameScreenshots:
             {'type': 'wait', 'ms': 500},
         ]
 
-        screenshot_with_interaction(
-            str(HTML_PATH),
-            str(output_path),
-            width=1400,
-            height=900,
-            actions=actions
-        )
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
     def test_armies_tab(self, ensure_screenshots_dir):
@@ -84,14 +170,16 @@ class TestGameScreenshots:
             {'type': 'wait', 'ms': 500},
         ]
 
-        screenshot_with_interaction(
-            str(HTML_PATH),
-            str(output_path),
-            width=1400,
-            height=900,
-            actions=actions
-        )
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
     def test_research_tab(self, ensure_screenshots_dir):
@@ -107,14 +195,16 @@ class TestGameScreenshots:
             {'type': 'wait', 'ms': 500},
         ]
 
-        screenshot_with_interaction(
-            str(HTML_PATH),
-            str(output_path),
-            width=1400,
-            height=900,
-            actions=actions
-        )
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
     def test_build_tab(self, ensure_screenshots_dir):
@@ -130,14 +220,16 @@ class TestGameScreenshots:
             {'type': 'wait', 'ms': 500},
         ]
 
-        screenshot_with_interaction(
-            str(HTML_PATH),
-            str(output_path),
-            width=1400,
-            height=900,
-            actions=actions
-        )
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
     def test_legend_tab(self, ensure_screenshots_dir):
@@ -153,14 +245,16 @@ class TestGameScreenshots:
             {'type': 'wait', 'ms': 500},
         ]
 
-        screenshot_with_interaction(
-            str(HTML_PATH),
-            str(output_path),
-            width=1400,
-            height=900,
-            actions=actions
-        )
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
     def test_game_running(self, ensure_screenshots_dir):
@@ -181,14 +275,16 @@ class TestGameScreenshots:
             {'type': 'wait', 'ms': 500},
         ]
 
-        screenshot_with_interaction(
-            str(HTML_PATH),
-            str(output_path),
-            width=1400,
-            height=900,
-            actions=actions
-        )
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
     def test_zoomed_out_view(self, ensure_screenshots_dir):
@@ -208,14 +304,16 @@ class TestGameScreenshots:
             {'type': 'wait', 'ms': 500},
         ]
 
-        screenshot_with_interaction(
-            str(HTML_PATH),
-            str(output_path),
-            width=1400,
-            height=900,
-            actions=actions
-        )
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
     def test_zoomed_in_settlement(self, ensure_screenshots_dir):
@@ -241,14 +339,16 @@ class TestGameScreenshots:
             {'type': 'wait', 'ms': 500},
         ]
 
-        screenshot_with_interaction(
-            str(HTML_PATH),
-            str(output_path),
-            width=1400,
-            height=900,
-            actions=actions
-        )
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
     def test_settlement_selected(self, ensure_screenshots_dir):
@@ -274,14 +374,16 @@ class TestGameScreenshots:
             {'type': 'wait', 'ms': 500},
         ]
 
-        screenshot_with_interaction(
-            str(HTML_PATH),
-            str(output_path),
-            width=1400,
-            height=900,
-            actions=actions
-        )
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
     def test_road_building_mode(self, ensure_screenshots_dir):
@@ -300,14 +402,16 @@ class TestGameScreenshots:
             {'type': 'wait', 'ms': 500},
         ]
 
-        screenshot_with_interaction(
-            str(HTML_PATH),
-            str(output_path),
-            width=1400,
-            height=900,
-            actions=actions
-        )
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
     def test_different_resolutions(self, ensure_screenshots_dir):
@@ -323,19 +427,37 @@ class TestGameScreenshots:
         for width, height, name in resolutions:
             output_path = ensure_screenshots_dir / f'resolution_{name}.png'
 
-            screenshot_html(
-                str(HTML_PATH),
-                str(output_path),
-                width=width,
-                height=height,
-                wait_time=1500
-            )
+            def capture(temp_path, w=width, h=height):
+                screenshot_html(
+                    str(HTML_PATH),
+                    temp_path,
+                    width=w,
+                    height=h,
+                    wait_time=1500
+                )
 
+            self._capture_and_compare(output_path, capture)
             assert output_path.exists()
 
 
 class TestResourceRendering:
     """Test resource node rendering."""
+
+    def _capture_and_compare(self, final_path: Path, capture_func, **kwargs):
+        """
+        Helper to capture screenshot to temp file and only save if changed.
+        Returns True if file was updated, False if unchanged.
+        """
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            temp_path = Path(tmp.name)
+
+        capture_func(temp_path=str(temp_path), **kwargs)
+
+        assert temp_path.exists(), "Screenshot was not created"
+        assert temp_path.stat().st_size > 0, "Screenshot file is empty"
+
+        was_updated = save_screenshot_if_changed(temp_path, final_path)
+        return was_updated
 
     def test_forest_resource(self, ensure_screenshots_dir):
         """Capture forest resource rendering."""
@@ -355,19 +477,37 @@ class TestResourceRendering:
             {'type': 'wait', 'ms': 500},
         ]
 
-        screenshot_with_interaction(
-            str(HTML_PATH),
-            str(output_path),
-            width=800,
-            height=600,
-            actions=actions
-        )
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=800,
+                height=600,
+                actions=actions
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
 
 class TestUIComponents:
     """Test UI component rendering."""
+
+    def _capture_and_compare(self, final_path: Path, capture_func, **kwargs):
+        """
+        Helper to capture screenshot to temp file and only save if changed.
+        Returns True if file was updated, False if unchanged.
+        """
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            temp_path = Path(tmp.name)
+
+        capture_func(temp_path=str(temp_path), **kwargs)
+
+        assert temp_path.exists(), "Screenshot was not created"
+        assert temp_path.stat().st_size > 0, "Screenshot file is empty"
+
+        was_updated = save_screenshot_if_changed(temp_path, final_path)
+        return was_updated
 
     def test_bottom_bar(self, ensure_screenshots_dir):
         """Capture the bottom resource bar."""
@@ -378,14 +518,16 @@ class TestUIComponents:
             {'type': 'wait', 'ms': 1000},
         ]
 
-        screenshot_with_interaction(
-            str(HTML_PATH),
-            str(output_path),
-            width=1400,
-            height=900,
-            actions=actions
-        )
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
     def test_minimap(self, ensure_screenshots_dir):
@@ -398,14 +540,16 @@ class TestUIComponents:
             {'type': 'wait', 'ms': 500},
         ]
 
-        screenshot_with_interaction(
-            str(HTML_PATH),
-            str(output_path),
-            width=1400,
-            height=900,
-            actions=actions
-        )
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
 
+        self._capture_and_compare(output_path, capture)
         assert output_path.exists()
 
 
