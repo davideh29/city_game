@@ -39,8 +39,14 @@ def screenshot_html(
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
+    # Try to use installed chromium with explicit path if needed
+    chromium_path = '/root/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell'
+
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        if os.path.exists(chromium_path):
+            browser = p.chromium.launch(headless=True, executable_path=chromium_path)
+        else:
+            browser = p.chromium.launch(headless=True)
         page = browser.new_page(viewport={'width': width, 'height': height})
 
         print(f"Loading: {file_url}")
@@ -82,8 +88,14 @@ def screenshot_with_interaction(
 
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
 
+    # Try to use installed chromium with explicit path if needed
+    chromium_path = '/root/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell'
+
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        if os.path.exists(chromium_path):
+            browser = p.chromium.launch(headless=True, executable_path=chromium_path)
+        else:
+            browser = p.chromium.launch(headless=True)
         page = browser.new_page(viewport={'width': width, 'height': height})
 
         page.goto(file_url)

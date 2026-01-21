@@ -1,6 +1,75 @@
 // Crossroads - Utility Functions
 
 /**
+ * Seeded pseudo-random number generator (Linear Congruential Generator)
+ * Use this for deterministic random generation (e.g., for reproducible test screenshots)
+ */
+class SeededRandom {
+    constructor(seed = 12345) {
+        this.seed = seed;
+        this.state = seed;
+    }
+
+    /**
+     * Reset the generator to its initial seed
+     */
+    reset() {
+        this.state = this.seed;
+    }
+
+    /**
+     * Set a new seed and reset
+     */
+    setSeed(seed) {
+        this.seed = seed;
+        this.state = seed;
+    }
+
+    /**
+     * Get next random number between 0 and 1
+     */
+    next() {
+        this.state = (this.state * 1103515245 + 12345) & 0x7fffffff;
+        return this.state / 0x7fffffff;
+    }
+
+    /**
+     * Get random integer between min and max (inclusive)
+     */
+    nextInt(min, max) {
+        return Math.floor(this.next() * (max - min + 1)) + min;
+    }
+
+    /**
+     * Get random float between min and max
+     */
+    nextFloat(min, max) {
+        return this.next() * (max - min) + min;
+    }
+
+    /**
+     * Get random element from array
+     */
+    nextElement(arr) {
+        return arr[Math.floor(this.next() * arr.length)];
+    }
+
+    /**
+     * Shuffle array in place using Fisher-Yates
+     */
+    shuffle(arr) {
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(this.next() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+    }
+}
+
+// Global seeded RNG instance with fixed seed for deterministic map generation
+const globalRng = new SeededRandom(42);
+
+/**
  * Generate a unique ID
  */
 function generateId() {
@@ -243,6 +312,8 @@ function getMoraleClass(morale) {
 // Export for use in other modules (if using modules)
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
+        SeededRandom,
+        globalRng,
         generateId,
         clamp,
         lerp,
