@@ -18,6 +18,7 @@ class UIManager {
             availableResearch: document.getElementById('available-research'),
             buildOptions: document.getElementById('build-options'),
             buildInfo: document.getElementById('build-info'),
+            legendContent: document.getElementById('legend-content'),
 
             // Selection panel
             selectionPanel: document.getElementById('selection-panel'),
@@ -160,6 +161,9 @@ class UIManager {
                 break;
             case 'build':
                 this.updateBuildPanel();
+                break;
+            case 'legend':
+                this.updateLegendPanel();
                 break;
         }
     }
@@ -390,6 +394,153 @@ class UIManager {
                 }
             }
         });
+    }
+
+    /**
+     * Update legend panel with game symbols and colors
+     */
+    updateLegendPanel() {
+        const legendHtml = `
+            <!-- Resources Section -->
+            <div class="legend-section">
+                <h4>Resources</h4>
+                <div class="legend-items">
+                    ${Object.values(ResourceType).map(res => `
+                        <div class="legend-item">
+                            <span class="legend-swatch" style="background: ${res.color};"></span>
+                            <span class="legend-name">${res.name}</span>
+                            <span class="legend-desc">Produces ${res.produces}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+
+            <!-- Roads Section -->
+            <div class="legend-section">
+                <h4>Roads</h4>
+                <div class="legend-items">
+                    ${Object.values(RoadType).map(road => `
+                        <div class="legend-item">
+                            <span class="legend-swatch legend-road" style="background: ${road.color}; height: ${road.width}px;"></span>
+                            <span class="legend-name">${road.name}</span>
+                            <span class="legend-desc">Speed ${road.speed}x</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+
+            <!-- Settlements Section -->
+            <div class="legend-section">
+                <h4>Settlements</h4>
+                <div class="legend-items">
+                    <div class="legend-item">
+                        <span class="legend-symbol" style="color: var(--player-1);">&#9679;</span>
+                        <span class="legend-name">Your Settlement</span>
+                        <span class="legend-desc">Circle with glow</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-symbol" style="color: var(--player-2);">&#9679;</span>
+                        <span class="legend-name">Enemy Settlement</span>
+                        <span class="legend-desc">Red colored</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-symbol" style="color: var(--neutral);">&#9679;</span>
+                        <span class="legend-name">Neutral Settlement</span>
+                        <span class="legend-desc">Gray colored</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-symbol" style="color: var(--warning);">&#9733;</span>
+                        <span class="legend-name">Capital</span>
+                        <span class="legend-desc">Star marker</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Armies Section -->
+            <div class="legend-section">
+                <h4>Armies</h4>
+                <div class="legend-items">
+                    <div class="legend-item">
+                        <span class="legend-symbol" style="color: var(--player-1);">&#9650;</span>
+                        <span class="legend-name">Your Army</span>
+                        <span class="legend-desc">Triangle shape</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-symbol" style="color: var(--player-2);">&#9650;</span>
+                        <span class="legend-name">Enemy Army</span>
+                        <span class="legend-desc">Red colored</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-symbol" style="color: var(--danger);">&#9876;</span>
+                        <span class="legend-name">Battle</span>
+                        <span class="legend-desc">Crossed swords</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Buildings Section -->
+            <div class="legend-section">
+                <h4>Buildings</h4>
+                <div class="legend-items">
+                    <div class="legend-item">
+                        <span class="legend-building">L</span>
+                        <span class="legend-name">Lumber Camp</span>
+                        <span class="legend-desc">Harvests wood</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-building">Q</span>
+                        <span class="legend-name">Quarry</span>
+                        <span class="legend-desc">Harvests stone</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-building">M</span>
+                        <span class="legend-name">Mine</span>
+                        <span class="legend-desc">Harvests iron</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-building">F</span>
+                        <span class="legend-name">Farm</span>
+                        <span class="legend-desc">Produces food</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-building">H</span>
+                        <span class="legend-name">House</span>
+                        <span class="legend-desc">+20 housing</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-building">B</span>
+                        <span class="legend-name">Barracks</span>
+                        <span class="legend-desc">Train units</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-building">R</span>
+                        <span class="legend-name">Library</span>
+                        <span class="legend-desc">+2 research</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-building">W</span>
+                        <span class="legend-name">Walls</span>
+                        <span class="legend-desc">Defense bonus</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Units Section -->
+            <div class="legend-section">
+                <h4>Units</h4>
+                <div class="legend-items">
+                    ${Object.values(UnitType).map(unit => `
+                        <div class="legend-item">
+                            <span class="legend-stat">${unit.strength}</span>
+                            <span class="legend-name">${unit.name}</span>
+                            <span class="legend-desc">Cost: ${unit.cost}g</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+
+        this.elements.legendContent.innerHTML = legendHtml;
     }
 
     /**

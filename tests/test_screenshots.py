@@ -140,6 +140,29 @@ class TestGameScreenshots:
 
         assert output_path.exists()
 
+    def test_legend_tab(self, ensure_screenshots_dir):
+        """
+        Capture the legend tab showing game symbols and colors.
+        Shows: Resources, roads, settlements, armies, buildings, and units.
+        """
+        output_path = ensure_screenshots_dir / 'sidebar_legend.png'
+
+        actions = [
+            {'type': 'wait', 'ms': 1000},
+            {'type': 'click', 'selector': '[data-tab="legend"]'},
+            {'type': 'wait', 'ms': 500},
+        ]
+
+        screenshot_with_interaction(
+            str(HTML_PATH),
+            str(output_path),
+            width=1400,
+            height=900,
+            actions=actions
+        )
+
+        assert output_path.exists()
+
     def test_game_running(self, ensure_screenshots_dir):
         """
         Capture the game after running for several ticks.
