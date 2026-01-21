@@ -1,0 +1,11 @@
+# Crossroads - Python Dependencies
+
+# Screenshot testing
+playwright>=1.40.0
+pytest>=7.4.0
+pytest-html>=4.1.0
+
+# Optional: Backend dependencies (for future server implementation)
+# fastapi>=0.104.0
+# uvicorn>=0.24.0
+# websockets>=12.0
