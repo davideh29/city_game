@@ -11,8 +11,8 @@ class Renderer {
 
         // Colors from design doc
         this.colors = {
-            mapBackground: '#e8f5e9',  // Light green background
-            gridLines: '#c8e6c9',      // Slightly darker green grid
+            mapBackground: '#7cb342',  // Grass green background
+            gridLines: '#689f38',      // Slightly darker green grid
             selection: '#4fc3f7',
             selectionGlow: 'rgba(79, 195, 247, 0.3)',
 
@@ -317,6 +317,7 @@ class Renderer {
 
     /**
      * Calculate house positions within a settlement, avoiding resources
+     * Uses the Geometry library for consistent positioning
      * Returns { positions: array of {x, y}, boundingRadius: number }
      */
     calculateHousePositions(settlement, gameState) {
@@ -344,87 +345,11 @@ class Renderer {
             }
         }
 
-        const positions = [];
-
-        // Use a seeded pseudo-random to get consistent positions
+        // Use a seeded pseudo-random for consistent positions
         const seed = settlement.id ? this.hashString(settlement.id) : 12345;
-        let rng = seed;
 
-        const nextRandom = () => {
-            rng = (rng * 1103515245 + 12345) & 0x7fffffff;
-            return rng / 0x7fffffff;
-        };
-
-        // House spacing - increase to reduce overlap
-        const houseSpacing = 12; // Minimum distance between house centers
-        const baseRingSpacing = 15; // Base spacing between rings
-
-        // Try to place houses in rings from center outward
-        let placedHouses = 0;
-        let ring = 0;
-        const maxRings = 8;
-
-        while (placedHouses < numHouses && ring < maxRings) {
-            const ringRadius = (ring === 0) ? 0 : (ring * baseRingSpacing);
-            // Calculate how many houses fit in this ring with proper spacing
-            const circumference = 2 * Math.PI * ringRadius;
-            const housesInRing = (ring === 0) ? 1 : Math.max(3, Math.floor(circumference / houseSpacing));
-            const angleOffset = nextRandom() * Math.PI * 2;
-
-            for (let i = 0; i < housesInRing && placedHouses < numHouses; i++) {
-                const angle = angleOffset + (i / housesInRing) * Math.PI * 2;
-                // Reduced jitter to prevent overlap
-                const jitter = ring > 0 ? (nextRandom() - 0.5) * 4 : 0;
-                const houseX = x + Math.cos(angle) * (ringRadius + jitter);
-                const houseY = y + Math.sin(angle) * (ringRadius + jitter);
-
-                // Check if position is blocked by a resource
-                let blocked = false;
-                for (const area of blockedAreas) {
-                    const distToBlocked = Math.sqrt(
-                        Math.pow(houseX - area.x, 2) +
-                        Math.pow(houseY - area.y, 2)
-                    );
-                    if (distToBlocked < area.radius) {
-                        blocked = true;
-                        break;
-                    }
-                }
-
-                // Check distance from other placed houses to avoid overlap
-                for (const pos of positions) {
-                    const distToHouse = Math.sqrt(
-                        Math.pow(houseX - pos.x, 2) +
-                        Math.pow(houseY - pos.y, 2)
-                    );
-                    if (distToHouse < houseSpacing * 0.8) {
-                        blocked = true;
-                        break;
-                    }
-                }
-
-                if (!blocked) {
-                    positions.push({ x: houseX, y: houseY });
-                    placedHouses++;
-                }
-            }
-            ring++;
-        }
-
-        // Calculate actual bounding radius from placed houses
-        let maxDist = 20; // Minimum radius
-        for (const pos of positions) {
-            const dist = Math.sqrt(
-                Math.pow(pos.x - x, 2) + Math.pow(pos.y - y, 2)
-            );
-            if (dist > maxDist) {
-                maxDist = dist;
-            }
-        }
-        // Add padding for the house size and border
-        const boundingRadius = maxDist + 8;
-
-        return { positions, boundingRadius };
+        // Use the Geometry library for house positioning
+        return Geometry.generateHousePositions(x, y, numHouses, blockedAreas, seed);
     }
 
     /**
