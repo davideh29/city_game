@@ -151,7 +151,7 @@ class Renderer {
     }
 
     /**
-     * Draw a settlement
+     * Draw a settlement with houses as triangles
      */
     drawSettlement(ctx, settlement, gameState) {
         const { x, y } = settlement.position;
@@ -179,20 +179,17 @@ class Renderer {
         ctx.lineWidth = 3 / this.camera.zoom;
         ctx.stroke();
 
-        // Inner details based on population
-        ctx.fillStyle = color + '60';
-        if (settlement.population >= 200) {
-            // Draw some small shapes to represent buildings
-            const innerRadius = radius * 0.6;
-            const numDots = Math.min(8, Math.floor(settlement.population / 200));
-            for (let i = 0; i < numDots; i++) {
-                const angle = (i / numDots) * Math.PI * 2;
-                const dotX = x + Math.cos(angle) * innerRadius * 0.6;
-                const dotY = y + Math.sin(angle) * innerRadius * 0.6;
-                ctx.beginPath();
-                ctx.arc(dotX, dotY, 3 / this.camera.zoom, 0, Math.PI * 2);
-                ctx.fill();
-            }
+        // Calculate house positions, avoiding resources inside the settlement
+        const housePositions = this.calculateHousePositions(settlement, gameState);
+
+        // Draw houses as small triangles
+        ctx.fillStyle = color + '80';
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1 / this.camera.zoom;
+
+        const houseSize = 4 / this.camera.zoom;
+        for (const pos of housePositions) {
+            this.drawHouseTriangle(ctx, pos.x, pos.y, houseSize);
         }
 
         // Capital marker
@@ -221,6 +218,121 @@ class Renderer {
             ctx.textAlign = 'center';
             ctx.fillText(settlement.name, x, y + radius + 15 / this.camera.zoom);
         }
+    }
+
+    /**
+     * Draw a small house triangle (roof pointing up)
+     */
+    drawHouseTriangle(ctx, hx, hy, size) {
+        ctx.beginPath();
+        ctx.moveTo(hx, hy - size);           // Top point
+        ctx.lineTo(hx - size, hy + size);    // Bottom left
+        ctx.lineTo(hx + size, hy + size);    // Bottom right
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    }
+
+    /**
+     * Calculate house positions within a settlement, avoiding resources
+     */
+    calculateHousePositions(settlement, gameState) {
+        const { x, y } = settlement.position;
+        const radius = settlement.radius;
+
+        // Number of houses scales linearly with population (1 house per 25 people)
+        const numHouses = Math.min(50, Math.floor(settlement.population / 25));
+
+        if (numHouses === 0) return [];
+
+        // Find resources that overlap with this settlement
+        const blockedAreas = [];
+        for (const resource of Object.values(gameState.resources)) {
+            const dist = Math.sqrt(
+                Math.pow(resource.position.x - x, 2) +
+                Math.pow(resource.position.y - y, 2)
+            );
+            // If resource is inside or overlapping with settlement
+            if (dist < radius + resource.radius) {
+                blockedAreas.push({
+                    x: resource.position.x,
+                    y: resource.position.y,
+                    radius: resource.radius + 5 // Add padding
+                });
+            }
+        }
+
+        const positions = [];
+        const usableRadius = radius * 0.85; // Don't place houses at the very edge
+
+        // Use a seeded pseudo-random to get consistent positions
+        const seed = settlement.id ? this.hashString(settlement.id) : 12345;
+        let rng = seed;
+
+        const nextRandom = () => {
+            rng = (rng * 1103515245 + 12345) & 0x7fffffff;
+            return rng / 0x7fffffff;
+        };
+
+        // Try to place houses in rings from center outward
+        let placedHouses = 0;
+        let ring = 0;
+        const maxRings = 6;
+
+        while (placedHouses < numHouses && ring < maxRings) {
+            const ringRadius = (ring === 0) ? 0 : (usableRadius * ring / maxRings);
+            const housesInRing = (ring === 0) ? 1 : Math.max(4, Math.floor(ring * 6));
+            const angleOffset = nextRandom() * Math.PI * 2;
+
+            for (let i = 0; i < housesInRing && placedHouses < numHouses; i++) {
+                const angle = angleOffset + (i / housesInRing) * Math.PI * 2;
+                const jitter = ring > 0 ? (nextRandom() - 0.5) * (usableRadius / maxRings) * 0.5 : 0;
+                const houseX = x + Math.cos(angle) * (ringRadius + jitter);
+                const houseY = y + Math.sin(angle) * (ringRadius + jitter);
+
+                // Check if position is blocked by a resource
+                let blocked = false;
+                for (const area of blockedAreas) {
+                    const distToBlocked = Math.sqrt(
+                        Math.pow(houseX - area.x, 2) +
+                        Math.pow(houseY - area.y, 2)
+                    );
+                    if (distToBlocked < area.radius) {
+                        blocked = true;
+                        break;
+                    }
+                }
+
+                // Also check if inside settlement boundary
+                const distToCenter = Math.sqrt(
+                    Math.pow(houseX - x, 2) + Math.pow(houseY - y, 2)
+                );
+                if (distToCenter > usableRadius) {
+                    blocked = true;
+                }
+
+                if (!blocked) {
+                    positions.push({ x: houseX, y: houseY });
+                    placedHouses++;
+                }
+            }
+            ring++;
+        }
+
+        return positions;
+    }
+
+    /**
+     * Simple string hash function for consistent pseudo-random positioning
+     */
+    hashString(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+        return Math.abs(hash);
     }
 
     /**
@@ -301,7 +413,7 @@ class Renderer {
     }
 
     /**
-     * Draw a road
+     * Draw a road, clipping at settlement boundaries
      */
     drawRoad(ctx, road, gameState) {
         if (road.waypoints.length < 2) return;
@@ -309,6 +421,11 @@ class Renderer {
         const typeData = road.typeData;
         const color = typeData.color;
         const width = typeData.width;
+
+        // Get adjusted waypoints that stop at settlement boundaries
+        const adjustedWaypoints = this.getAdjustedRoadWaypoints(road.waypoints, gameState);
+
+        if (adjustedWaypoints.length < 2) return;
 
         // Set line style based on completion
         if (!road.isComplete) {
@@ -321,15 +438,15 @@ class Renderer {
         ctx.lineJoin = 'round';
 
         ctx.beginPath();
-        ctx.moveTo(road.waypoints[0].x, road.waypoints[0].y);
-        for (let i = 1; i < road.waypoints.length; i++) {
-            ctx.lineTo(road.waypoints[i].x, road.waypoints[i].y);
+        ctx.moveTo(adjustedWaypoints[0].x, adjustedWaypoints[0].y);
+        for (let i = 1; i < adjustedWaypoints.length; i++) {
+            ctx.lineTo(adjustedWaypoints[i].x, adjustedWaypoints[i].y);
         }
         ctx.stroke();
 
         // Railway cross-ties
         if (road.roadType === 'rail' && road.isComplete && this.camera.zoom >= 0.5) {
-            this.drawRailwayTies(ctx, road);
+            this.drawRailwayTiesAdjusted(ctx, adjustedWaypoints, road.totalLength);
         }
 
         ctx.setLineDash([]);
@@ -345,21 +462,132 @@ class Renderer {
     }
 
     /**
+     * Adjust road waypoints to stop at settlement boundaries instead of centers
+     */
+    getAdjustedRoadWaypoints(waypoints, gameState) {
+        if (waypoints.length < 2) return waypoints;
+
+        const settlements = Object.values(gameState.settlements);
+        const adjusted = waypoints.map(wp => ({ x: wp.x, y: wp.y }));
+
+        // Adjust first waypoint
+        const firstPoint = adjusted[0];
+        const secondPoint = adjusted[1];
+        for (const settlement of settlements) {
+            const dist = Math.sqrt(
+                Math.pow(firstPoint.x - settlement.position.x, 2) +
+                Math.pow(firstPoint.y - settlement.position.y, 2)
+            );
+            if (dist < settlement.radius) {
+                // Point is inside settlement, move to boundary
+                const intersection = this.lineCircleIntersection(
+                    settlement.position.x, settlement.position.y, settlement.radius,
+                    firstPoint.x, firstPoint.y,
+                    secondPoint.x, secondPoint.y
+                );
+                if (intersection) {
+                    adjusted[0] = intersection;
+                }
+                break;
+            }
+        }
+
+        // Adjust last waypoint
+        const lastPoint = adjusted[adjusted.length - 1];
+        const secondLastPoint = adjusted[adjusted.length - 2];
+        for (const settlement of settlements) {
+            const dist = Math.sqrt(
+                Math.pow(lastPoint.x - settlement.position.x, 2) +
+                Math.pow(lastPoint.y - settlement.position.y, 2)
+            );
+            if (dist < settlement.radius) {
+                // Point is inside settlement, move to boundary
+                const intersection = this.lineCircleIntersection(
+                    settlement.position.x, settlement.position.y, settlement.radius,
+                    lastPoint.x, lastPoint.y,
+                    secondLastPoint.x, secondLastPoint.y
+                );
+                if (intersection) {
+                    adjusted[adjusted.length - 1] = intersection;
+                }
+                break;
+            }
+        }
+
+        return adjusted;
+    }
+
+    /**
+     * Find intersection of a line segment with a circle boundary
+     * Returns the intersection point closest to point (x1, y1)
+     */
+    lineCircleIntersection(cx, cy, r, x1, y1, x2, y2) {
+        // Direction from inside point to outside point
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len === 0) return null;
+
+        // Normalized direction
+        const ux = dx / len;
+        const uy = dy / len;
+
+        // Vector from circle center to starting point
+        const fx = x1 - cx;
+        const fy = y1 - cy;
+
+        // Quadratic equation coefficients for ray-circle intersection
+        const a = ux * ux + uy * uy;
+        const b = 2 * (fx * ux + fy * uy);
+        const c = fx * fx + fy * fy - r * r;
+
+        const discriminant = b * b - 4 * a * c;
+        if (discriminant < 0) return null;
+
+        const sqrtDisc = Math.sqrt(discriminant);
+        const t1 = (-b - sqrtDisc) / (2 * a);
+        const t2 = (-b + sqrtDisc) / (2 * a);
+
+        // We want the intersection going from inside to outside (positive t)
+        let t = t1 >= 0 ? t1 : t2;
+        if (t < 0) t = t2;
+
+        return {
+            x: x1 + t * ux,
+            y: y1 + t * uy
+        };
+    }
+
+    /**
      * Draw railway cross-ties
      */
     drawRailwayTies(ctx, road) {
+        this.drawRailwayTiesAdjusted(ctx, road.waypoints, road.totalLength);
+    }
+
+    /**
+     * Draw railway cross-ties for adjusted waypoints
+     */
+    drawRailwayTiesAdjusted(ctx, waypoints, totalLength) {
         const tieSpacing = 15;
         const tieWidth = 8;
 
         ctx.strokeStyle = '#6d4c41';
         ctx.lineWidth = 2 / this.camera.zoom;
 
-        let distance = 0;
-        const totalLength = road.totalLength;
+        // Calculate actual length of adjusted waypoints
+        let adjustedLength = 0;
+        for (let i = 1; i < waypoints.length; i++) {
+            const dx = waypoints[i].x - waypoints[i - 1].x;
+            const dy = waypoints[i].y - waypoints[i - 1].y;
+            adjustedLength += Math.sqrt(dx * dx + dy * dy);
+        }
 
-        while (distance < totalLength) {
-            const point = pointAlongPolyline(road.waypoints, distance);
-            const nextPoint = pointAlongPolyline(road.waypoints, distance + 1);
+        let distance = 0;
+
+        while (distance < adjustedLength) {
+            const point = pointAlongPolyline(waypoints, distance);
+            const nextPoint = pointAlongPolyline(waypoints, distance + 1);
 
             // Calculate perpendicular direction
             const dx = nextPoint.x - point.x;
