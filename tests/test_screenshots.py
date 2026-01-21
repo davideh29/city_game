@@ -432,37 +432,35 @@ class TestGameScreenshots:
                     const playerSettlement = settlements.find(s => s.ownerId === game.playerId);
 
                     if (playerSettlement) {
-                        // Create a long road from the settlement to a distant point
-                        // This ensures the road takes multiple ticks to build
+                        // Create a long road heading left/up from the settlement
+                        // (away from the map center where mountains are)
                         const startX = playerSettlement.position.x;
                         const startY = playerSettlement.position.y;
 
-                        // Create waypoints for a road that goes 400 units away
+                        // Create waypoints for a road that goes 500 units to the left
                         const waypoints = [
                             new Vec2(startX, startY),
-                            new Vec2(startX + 150, startY - 100),
-                            new Vec2(startX + 300, startY - 50),
-                            new Vec2(startX + 400, startY - 150)
+                            new Vec2(startX - 150, startY - 50),
+                            new Vec2(startX - 300, startY - 100),
+                            new Vec2(startX - 450, startY - 50)
                         ];
 
                         // Build the road (starts with builtLength = 0)
-                        game.buildRoad(waypoints, 'dirt');
+                        const newRoad = game.buildRoad(waypoints, 'dirt');
 
-                        // Run a few ticks to partially build the road
-                        // With ROAD_CONSTRUCTION_SPEED of 20 units/tick,
-                        // running 5 ticks builds about 100 units of the ~500 unit road
-                        for (let i = 0; i < 5; i++) {
-                            game.processConstruction();
-                        }
+                        if (newRoad) {
+                            // Run a few ticks to partially build the road
+                            // With ROAD_CONSTRUCTION_SPEED of 20 units/tick,
+                            // running 8 ticks builds about 160 units of the ~550 unit road
+                            for (let i = 0; i < 8; i++) {
+                                game.processConstruction();
+                            }
 
-                        // Center camera on the construction point
-                        const roads = Object.values(game.state.roads);
-                        const newRoad = roads[roads.length - 1];
-                        if (newRoad && !newRoad.isComplete) {
+                            // Get the construction point and center camera on it
                             const constructionPoint = newRoad.getConstructionPoint();
                             if (constructionPoint) {
                                 camera.centerOn(constructionPoint.x, constructionPoint.y);
-                                camera.setZoom(1.5);
+                                camera.setZoom(1.2);
                             }
                         }
                     }
