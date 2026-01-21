@@ -114,6 +114,57 @@
             </aside>
         </main>
 
+        <!-- Entity Info Bar (shows when entity is selected) -->
+        <div id="entity-info-bar" class="hidden">
+            <div id="entity-info-header">
+                <span id="entity-info-title">Selected Entity</span>
+                <button id="entity-info-close" class="icon-btn">&times;</button>
+            </div>
+            <div id="entity-info-content">
+                <!-- For armies: unit composition -->
+                <div id="army-units-display" class="hidden">
+                    <div class="info-bar-section">
+                        <span class="info-bar-label">Units:</span>
+                        <div id="army-units-list" class="unit-chips"></div>
+                    </div>
+                    <div class="info-bar-section">
+                        <span class="info-bar-label">Strength:</span>
+                        <span id="army-strength-value">0</span>
+                    </div>
+                    <div class="info-bar-section">
+                        <span class="info-bar-label">Morale:</span>
+                        <span id="army-morale-value">100%</span>
+                    </div>
+                </div>
+                <!-- For settlements: garrison and training -->
+                <div id="settlement-military-display" class="hidden">
+                    <div class="info-bar-section">
+                        <span class="info-bar-label">Garrison:</span>
+                        <div id="garrison-units-list" class="unit-chips"></div>
+                    </div>
+                    <div class="info-bar-section" id="training-section">
+                        <span class="info-bar-label">Training:</span>
+                        <div id="training-queue-list" class="training-queue"></div>
+                    </div>
+                </div>
+                <!-- For battles: combat status -->
+                <div id="battle-info-display" class="hidden">
+                    <div class="info-bar-section">
+                        <span class="info-bar-label">Battle:</span>
+                        <span id="battle-status-text">In Progress</span>
+                    </div>
+                    <div class="info-bar-section">
+                        <span class="info-bar-label">Attacker:</span>
+                        <span id="battle-attacker-strength">0</span>
+                    </div>
+                    <div class="info-bar-section">
+                        <span class="info-bar-label">Defender:</span>
+                        <span id="battle-defender-strength">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Bottom Bar -->
         <footer id="bottom-bar">
             <div id="resources-display">

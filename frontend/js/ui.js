@@ -26,6 +26,23 @@ class UIManager {
             selectionContent: document.getElementById('selection-content'),
             selectionActions: document.getElementById('selection-actions'),
 
+            // Entity info bar
+            entityInfoBar: document.getElementById('entity-info-bar'),
+            entityInfoTitle: document.getElementById('entity-info-title'),
+            entityInfoClose: document.getElementById('entity-info-close'),
+            armyUnitsDisplay: document.getElementById('army-units-display'),
+            armyUnitsList: document.getElementById('army-units-list'),
+            armyStrengthValue: document.getElementById('army-strength-value'),
+            armyMoraleValue: document.getElementById('army-morale-value'),
+            settlementMilitaryDisplay: document.getElementById('settlement-military-display'),
+            garrisonUnitsList: document.getElementById('garrison-units-list'),
+            trainingSection: document.getElementById('training-section'),
+            trainingQueueList: document.getElementById('training-queue-list'),
+            battleInfoDisplay: document.getElementById('battle-info-display'),
+            battleStatusText: document.getElementById('battle-status-text'),
+            battleAttackerStrength: document.getElementById('battle-attacker-strength'),
+            battleDefenderStrength: document.getElementById('battle-defender-strength'),
+
             // Bottom bar
             resFoodEl: document.getElementById('res-food'),
             resWoodEl: document.getElementById('res-wood'),
@@ -102,6 +119,14 @@ class UIManager {
         // Selection panel close
         document.getElementById('selection-close').addEventListener('click', () => {
             this.hideEntityDetails();
+            if (window.inputHandler) {
+                window.inputHandler.clearSelection();
+            }
+        });
+
+        // Entity info bar close
+        this.elements.entityInfoClose.addEventListener('click', () => {
+            this.hideEntityInfoBar();
             if (window.inputHandler) {
                 window.inputHandler.clearSelection();
             }
@@ -569,15 +594,19 @@ class UIManager {
         switch (type) {
             case 'settlement':
                 this.showSettlementDetails(entity);
+                this.showEntityInfoBar(entity, 'settlement');
                 break;
             case 'army':
                 this.showArmyDetails(entity);
+                this.showEntityInfoBar(entity, 'army');
                 break;
             case 'resource':
                 this.showResourceDetails(entity);
+                this.hideEntityInfoBar();
                 break;
             case 'building':
                 this.showBuildingDetails(entity);
+                this.hideEntityInfoBar();
                 break;
         }
     }
@@ -587,6 +616,142 @@ class UIManager {
      */
     hideEntityDetails() {
         this.elements.selectionPanel.classList.add('hidden');
+        this.hideEntityInfoBar();
+    }
+
+    /**
+     * Show entity info bar at bottom of screen
+     */
+    showEntityInfoBar(entity, type) {
+        this.elements.entityInfoBar.classList.remove('hidden');
+
+        // Hide all displays first
+        this.elements.armyUnitsDisplay.classList.add('hidden');
+        this.elements.settlementMilitaryDisplay.classList.add('hidden');
+        this.elements.battleInfoDisplay.classList.add('hidden');
+
+        if (type === 'army') {
+            this.updateArmyInfoBar(entity);
+        } else if (type === 'settlement') {
+            this.updateSettlementInfoBar(entity);
+        }
+    }
+
+    /**
+     * Hide entity info bar
+     */
+    hideEntityInfoBar() {
+        this.elements.entityInfoBar.classList.add('hidden');
+    }
+
+    /**
+     * Update army info bar with unit composition
+     */
+    updateArmyInfoBar(army) {
+        this.elements.entityInfoTitle.textContent = army.name;
+        this.elements.armyUnitsDisplay.classList.remove('hidden');
+
+        // Generate unit chips
+        let unitsHtml = '';
+        if (Object.keys(army.units).length === 0) {
+            unitsHtml = '<span class="no-units-text">No units</span>';
+        } else {
+            for (const [unitType, count] of Object.entries(army.units)) {
+                if (count > 0) {
+                    const typeData = UnitType[unitType.toUpperCase()];
+                    const displayName = typeData ? typeData.name : unitType;
+                    unitsHtml += `
+                        <div class="unit-chip">
+                            <span class="unit-chip-icon ${unitType}">${typeData ? typeData.strength : '?'}</span>
+                            <span class="unit-chip-count">${count}</span>
+                            <span class="unit-chip-name">${displayName}</span>
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        this.elements.armyUnitsList.innerHTML = unitsHtml;
+        this.elements.armyStrengthValue.textContent = army.totalStrength;
+        this.elements.armyMoraleValue.textContent = `${Math.floor(army.morale)}%`;
+        this.elements.armyMoraleValue.className = getMoraleClass(army.morale);
+    }
+
+    /**
+     * Update settlement info bar with garrison and training queue
+     */
+    updateSettlementInfoBar(settlement) {
+        this.elements.entityInfoTitle.textContent = settlement.name;
+        this.elements.settlementMilitaryDisplay.classList.remove('hidden');
+
+        // Generate garrison chips
+        let garrisonHtml = '';
+        const garrison = settlement.garrison || {};
+        const garrisonUnits = garrison.units || {};
+
+        if (Object.keys(garrisonUnits).length === 0) {
+            garrisonHtml = '<span class="no-units-text">No garrison</span>';
+        } else {
+            for (const [unitType, count] of Object.entries(garrisonUnits)) {
+                if (count > 0) {
+                    const typeData = UnitType[unitType.toUpperCase()];
+                    const displayName = typeData ? typeData.name : unitType;
+                    garrisonHtml += `
+                        <div class="unit-chip">
+                            <span class="unit-chip-icon ${unitType}">${typeData ? typeData.strength : '?'}</span>
+                            <span class="unit-chip-count">${count}</span>
+                            <span class="unit-chip-name">${displayName}</span>
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        this.elements.garrisonUnitsList.innerHTML = garrisonHtml;
+
+        // Generate training queue display
+        let trainingHtml = '';
+        const trainingQueue = settlement.trainingQueue || [];
+
+        if (trainingQueue.length === 0) {
+            trainingHtml = '<span class="no-units-text">Nothing training</span>';
+        } else {
+            for (const item of trainingQueue) {
+                const typeData = UnitType[item.unitType.toUpperCase()];
+                const displayName = typeData ? typeData.name : item.unitType;
+                const progress = (item.progress / item.totalTime) * 100;
+                const ticksRemaining = item.totalTime - item.progress;
+
+                trainingHtml += `
+                    <div class="training-item">
+                        <span class="unit-chip-icon ${item.unitType}">${typeData ? typeData.strength : '?'}</span>
+                        <div class="training-progress">
+                            <div class="training-progress-bar">
+                                <div class="training-progress-fill" style="width: ${progress}%"></div>
+                            </div>
+                            <span class="training-time">${item.count}x ${displayName} - ${ticksRemaining} ticks</span>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        this.elements.trainingQueueList.innerHTML = trainingHtml;
+    }
+
+    /**
+     * Update battle info bar
+     */
+    updateBattleInfoBar(battle) {
+        this.elements.entityInfoTitle.textContent = 'Battle in Progress';
+        this.elements.battleInfoDisplay.classList.remove('hidden');
+
+        const attacker = this.game.state.armies[battle.attackerId];
+        const defender = this.game.state.armies[battle.defenderId] || battle._garrison;
+
+        this.elements.battleStatusText.textContent = battle.locationType === 'siege' ? 'Siege' : 'Field Battle';
+        this.elements.battleAttackerStrength.textContent = attacker ? attacker.totalStrength : '0';
+        this.elements.battleDefenderStrength.textContent = defender ? defender.totalStrength : '0';
     }
 
     /**
@@ -596,6 +761,43 @@ class UIManager {
         this.elements.selectionTitle.textContent = settlement.name;
 
         const isOwned = settlement.ownerId === this.game.playerId;
+
+        // Garrison info
+        const garrison = settlement.garrison || { units: {} };
+        const garrisonUnits = garrison.units || {};
+        let garrisonHtml = '';
+        if (Object.keys(garrisonUnits).length > 0) {
+            garrisonHtml = '<h4>Garrison</h4>';
+            for (const [unitType, count] of Object.entries(garrisonUnits)) {
+                if (count > 0) {
+                    const typeData = UnitType[unitType.toUpperCase()];
+                    garrisonHtml += `
+                        <div class="info-row">
+                            <span class="info-label">${typeData ? typeData.name : unitType}</span>
+                            <span>${count}</span>
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        // Training queue info
+        let trainingHtml = '';
+        if (settlement.trainingQueue && settlement.trainingQueue.length > 0) {
+            trainingHtml = '<h4>Training</h4>';
+            for (const item of settlement.trainingQueue) {
+                const typeData = UnitType[item.unitType.toUpperCase()];
+                const displayName = typeData ? typeData.name : item.unitType;
+                const progress = Math.floor((item.progress / item.totalTime) * 100);
+                const ticksRemaining = item.totalTime - item.progress;
+                trainingHtml += `
+                    <div class="info-row">
+                        <span class="info-label">${item.count}x ${displayName}</span>
+                        <span>${progress}% (${ticksRemaining} ticks)</span>
+                    </div>
+                `;
+            }
+        }
 
         this.elements.selectionContent.innerHTML = `
             <div class="info-panel">
@@ -619,6 +821,8 @@ class UIManager {
                     <span class="info-label">Unrest</span>
                     <span>${Math.floor(settlement.unrest)} / ${settlement.revoltThreshold}</span>
                 </div>
+                ${garrisonHtml}
+                ${trainingHtml}
                 <h4>Resources</h4>
                 <div class="info-row">
                     <span class="info-label">Food</span>
@@ -640,10 +844,12 @@ class UIManager {
         `;
 
         if (isOwned) {
-            const hasBarracks = settlement.buildings.some(b => b.type === 'barracks');
+            const hasBarracks = settlement.buildings.some(b => b.type === 'barracks' && b.isComplete);
+            const hasGarrison = Object.keys(garrisonUnits).length > 0;
             this.elements.selectionActions.innerHTML = `
                 <button class="secondary-btn" onclick="ui.showTaxModal('${settlement.id}')">Set Tax</button>
-                ${hasBarracks ? `<button class="secondary-btn" onclick="ui.showCreateArmyModal('${settlement.id}')">Create Army</button>` : ''}
+                ${hasBarracks ? `<button class="secondary-btn" onclick="ui.showCreateArmyModal('${settlement.id}')">Train Units</button>` : ''}
+                ${hasGarrison ? `<button class="secondary-btn" onclick="ui.showDeployGarrisonModal('${settlement.id}')">Deploy Army</button>` : ''}
                 <button class="secondary-btn" onclick="ui.showBuildModal('${settlement.id}')">Build</button>
             `;
         } else {
@@ -841,44 +1047,73 @@ class UIManager {
     }
 
     /**
-     * Show create army modal
+     * Show create army modal (now uses training system)
      */
     showCreateArmyModal(settlementId) {
         const settlement = this.game.state.settlements[settlementId];
         const player = this.game.state.players[this.game.playerId];
 
-        // Get available unit types
-        const availableUnits = Object.entries(UnitType).filter(([id, type]) => {
-            if (type.requiredTech && !player.researchedTechs.has(type.requiredTech)) {
-                return false;
-            }
-            return true;
+        // Get all unit types with availability status
+        const unitEntries = Object.entries(UnitType).map(([id, type]) => {
+            const available = !type.requiredTech || player.researchedTechs.has(type.requiredTech);
+            return { id, type, available };
         });
 
+        const popPerUnit = GAME_CONSTANTS.POPULATION_PER_UNIT;
+
         const content = `
-            <p>Create a new army at ${settlement.name}</p>
+            <p>Train units at ${settlement.name}</p>
+            <p class="text-muted">Units will be added to the garrison when training completes.</p>
             <div class="unit-selector">
-                ${availableUnits.map(([id, type]) => `
-                    <div class="unit-item">
+                ${unitEntries.map(({ id, type, available }) => `
+                    <div class="unit-item ${!available ? 'locked' : ''}">
                         <div class="unit-info">
                             <span>${type.name}</span>
-                            <span class="text-muted">(${type.cost}g)</span>
+                            <span class="text-muted">(${type.cost}g + ${popPerUnit} pop)</span>
+                            ${!available ? `<span class="text-warning" style="font-size: 10px;">Requires: ${type.requiredTech}</span>` : ''}
                         </div>
-                        <input type="number" class="unit-count-input" data-unit="${type.id}" min="0" value="0" max="100">
+                        <input type="number" class="unit-count-input" data-unit="${type.id}" min="0" value="0" max="100" ${!available ? 'disabled' : ''}>
                     </div>
                 `).join('')}
             </div>
-            <p class="text-muted">Available gold: ${formatNumber(settlement.treasury)}</p>
+            <div class="modal-stats">
+                <p>Available gold: <strong>${formatNumber(settlement.treasury)}</strong></p>
+                <p>Available population: <strong>${formatNumber(settlement.population)}</strong></p>
+            </div>
         `;
 
-        this.showModal('Create Army', content, [
+        this.showModal('Train Units', content, [
             { label: 'Cancel', onclick: 'ui.closeModal()' },
-            { label: 'Create', primary: true, onclick: `ui.createArmy('${settlementId}')` }
+            { label: 'Train', primary: true, onclick: `ui.trainUnits('${settlementId}')` }
         ]);
     }
 
     /**
-     * Create army from modal
+     * Train units from modal
+     */
+    trainUnits(settlementId) {
+        const inputs = document.querySelectorAll('.unit-count-input:not(:disabled)');
+        let anyQueued = false;
+
+        inputs.forEach(input => {
+            const count = parseInt(input.value) || 0;
+            if (count > 0) {
+                this.game.trainUnits(settlementId, input.dataset.unit, count);
+                anyQueued = true;
+            }
+        });
+
+        if (!anyQueued) {
+            this.showNotification('Select at least one unit', 'warning');
+            return;
+        }
+
+        this.closeModal();
+        this.showNotification('Training started!', 'success');
+    }
+
+    /**
+     * Create army from garrison (deploy garrison units)
      */
     createArmy(settlementId) {
         const inputs = document.querySelectorAll('.unit-count-input');
@@ -896,8 +1131,44 @@ class UIManager {
             return;
         }
 
-        this.game.createArmy(settlementId, units);
+        this.game.deployGarrison(settlementId, units);
         this.closeModal();
+    }
+
+    /**
+     * Show deploy garrison modal - create army from garrisoned units
+     */
+    showDeployGarrisonModal(settlementId) {
+        const settlement = this.game.state.settlements[settlementId];
+        const garrison = settlement.garrison || { units: {} };
+
+        if (Object.keys(garrison.units).length === 0) {
+            this.showNotification('No units in garrison', 'warning');
+            return;
+        }
+
+        const content = `
+            <p>Deploy garrison units from ${settlement.name} as a new army</p>
+            <div class="unit-selector">
+                ${Object.entries(garrison.units).map(([unitType, count]) => {
+                    const typeData = UnitType[unitType.toUpperCase()];
+                    return count > 0 ? `
+                        <div class="unit-item">
+                            <div class="unit-info">
+                                <span>${typeData ? typeData.name : unitType}</span>
+                                <span class="text-muted">(${count} available)</span>
+                            </div>
+                            <input type="number" class="unit-count-input" data-unit="${unitType}" min="0" value="0" max="${count}">
+                        </div>
+                    ` : '';
+                }).join('')}
+            </div>
+        `;
+
+        this.showModal('Deploy Army', content, [
+            { label: 'Cancel', onclick: 'ui.closeModal()' },
+            { label: 'Deploy', primary: true, onclick: `ui.createArmy('${settlementId}')` }
+        ]);
     }
 
     /**

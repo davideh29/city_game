@@ -232,6 +232,90 @@ class Renderer {
             ctx.textAlign = 'center';
             ctx.fillText(settlement.name, x, y + radius + 15 / this.camera.zoom);
         }
+
+        // Check if settlement is under siege
+        const isUnderSiege = this.isSettlementUnderSiege(settlement, gameState);
+        if (isUnderSiege) {
+            this.drawSiegeIndicator(ctx, x, y, radius);
+        }
+
+        // Show garrison strength if has garrison
+        const garrisonCount = settlement.garrisonCount || 0;
+        if (garrisonCount > 0 && this.camera.zoom >= 0.6) {
+            // Draw small shield icon with garrison count
+            const shieldX = x + radius - 5 / this.camera.zoom;
+            const shieldY = y - radius + 5 / this.camera.zoom;
+            const shieldSize = 12 / this.camera.zoom;
+
+            ctx.fillStyle = '#455a64';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1 / this.camera.zoom;
+
+            // Shield shape
+            ctx.beginPath();
+            ctx.moveTo(shieldX, shieldY - shieldSize);
+            ctx.lineTo(shieldX + shieldSize * 0.7, shieldY - shieldSize * 0.5);
+            ctx.lineTo(shieldX + shieldSize * 0.7, shieldY + shieldSize * 0.3);
+            ctx.lineTo(shieldX, shieldY + shieldSize);
+            ctx.lineTo(shieldX - shieldSize * 0.7, shieldY + shieldSize * 0.3);
+            ctx.lineTo(shieldX - shieldSize * 0.7, shieldY - shieldSize * 0.5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Garrison count
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold ${8 / this.camera.zoom}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(garrisonCount.toString(), shieldX, shieldY);
+        }
+    }
+
+    /**
+     * Check if a settlement is currently under siege
+     */
+    isSettlementUnderSiege(settlement, gameState) {
+        for (const battle of Object.values(gameState.battles)) {
+            if (battle.locationType === 'siege' && battle._settlement && battle._settlement.id === settlement.id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Draw siege indicator around a settlement
+     */
+    drawSiegeIndicator(ctx, x, y, radius) {
+        const time = Date.now() / 400;
+        const pulseScale = 1 + Math.sin(time) * 0.1;
+
+        // Pulsing red ring
+        ctx.strokeStyle = '#f44336';
+        ctx.lineWidth = 4 / this.camera.zoom;
+        ctx.setLineDash([8 / this.camera.zoom, 4 / this.camera.zoom]);
+        ctx.beginPath();
+        ctx.arc(x, y, (radius + 15) * pulseScale, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Crossed swords icon above
+        const iconY = y - radius - 25 / this.camera.zoom;
+        const iconSize = 18 / this.camera.zoom * pulseScale;
+
+        ctx.fillStyle = '#f44336';
+        ctx.font = `${iconSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⚔', x, iconY);
+
+        // "UNDER ATTACK" text
+        if (this.camera.zoom >= 0.7) {
+            ctx.fillStyle = '#f44336';
+            ctx.font = `bold ${10 / this.camera.zoom}px sans-serif`;
+            ctx.fillText('UNDER SIEGE', x, iconY + 15 / this.camera.zoom);
+        }
     }
 
     /**
@@ -805,68 +889,106 @@ class Renderer {
     }
 
     /**
-     * Draw an army
+     * Draw an army as a circle with unit count inside
      */
     drawArmy(ctx, army, gameState) {
         const { x, y } = army.position;
         const player = gameState.players[army.ownerId];
         const color = player ? player.color : this.colors.players.neutral;
 
-        // Size based on unit count
-        const size = 8 + Math.sqrt(army.totalUnits) * 0.3;
+        // Measure text to determine circle size
+        const unitCount = army.totalUnits.toString();
+        const baseFontSize = 12 / this.camera.zoom;
+        ctx.font = `bold ${baseFontSize}px sans-serif`;
+        const textMetrics = ctx.measureText(unitCount);
+        const textWidth = textMetrics.width;
 
-        // Calculate direction for triangle
-        let angle = 0;
+        // Circle radius scales to fit the number text with padding
+        const minRadius = 12 / this.camera.zoom;
+        const radius = Math.max(minRadius, (textWidth / 2) + 6 / this.camera.zoom);
+
+        // Draw direction indicator if moving
         if (army.destination) {
             const dx = army.destination.x - x;
             const dy = army.destination.y - y;
-            angle = Math.atan2(dy, dx);
+            const angle = Math.atan2(dy, dx);
+            const arrowLength = radius + 8 / this.camera.zoom;
+
+            // Draw arrow pointing toward destination
+            ctx.strokeStyle = color + 'aa';
+            ctx.lineWidth = 2 / this.camera.zoom;
+            ctx.beginPath();
+            ctx.moveTo(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius);
+            ctx.lineTo(x + Math.cos(angle) * arrowLength, y + Math.sin(angle) * arrowLength);
+            ctx.stroke();
+
+            // Arrow head
+            const headSize = 4 / this.camera.zoom;
+            const headAngle = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(x + Math.cos(angle) * arrowLength, y + Math.sin(angle) * arrowLength);
+            ctx.lineTo(
+                x + Math.cos(angle - headAngle) * (arrowLength - headSize),
+                y + Math.sin(angle - headAngle) * (arrowLength - headSize)
+            );
+            ctx.moveTo(x + Math.cos(angle) * arrowLength, y + Math.sin(angle) * arrowLength);
+            ctx.lineTo(
+                x + Math.cos(angle + headAngle) * (arrowLength - headSize),
+                y + Math.sin(angle + headAngle) * (arrowLength - headSize)
+            );
+            ctx.stroke();
         }
 
-        // Draw triangle
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(angle);
+        // Draw outer glow when selected or moving
+        if (army.destination || army.inBattle) {
+            const glowRadius = radius + 4 / this.camera.zoom;
+            const gradient = ctx.createRadialGradient(x, y, radius, x, y, glowRadius);
+            gradient.addColorStop(0, color + '60');
+            gradient.addColorStop(1, 'transparent');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
+        // Draw main circle
         ctx.fillStyle = color;
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 2 / this.camera.zoom;
-
         ctx.beginPath();
-        ctx.moveTo(size, 0);
-        ctx.lineTo(-size * 0.6, -size * 0.6);
-        ctx.lineTo(-size * 0.6, size * 0.6);
-        ctx.closePath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
 
-        ctx.restore();
+        // Draw unit count text
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${baseFontSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(unitCount, x, y);
 
-        // Moving indicator
+        // In battle indicator - pulsing crossed swords above
+        if (army.inBattle) {
+            const time = Date.now() / 300;
+            const pulseScale = 1 + Math.sin(time) * 0.2;
+            const iconSize = 14 / this.camera.zoom * pulseScale;
+
+            ctx.fillStyle = '#f44336';
+            ctx.font = `${iconSize}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('⚔', x, y - radius - 10 / this.camera.zoom);
+        }
+
+        // Moving indicator ring (dashed)
         if (army.destination) {
             ctx.strokeStyle = color + '60';
             ctx.lineWidth = 2 / this.camera.zoom;
             ctx.setLineDash([3 / this.camera.zoom, 3 / this.camera.zoom]);
             ctx.beginPath();
-            ctx.arc(x, y, size + 5, 0, Math.PI * 2);
+            ctx.arc(x, y, radius + 5 / this.camera.zoom, 0, Math.PI * 2);
             ctx.stroke();
             ctx.setLineDash([]);
-        }
-
-        // In battle indicator
-        if (army.inBattle) {
-            ctx.fillStyle = '#f44336';
-            ctx.font = `${14 / this.camera.zoom}px sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.fillText('⚔', x, y - size - 8 / this.camera.zoom);
-        }
-
-        // Unit count label
-        if (this.camera.zoom >= 0.7) {
-            ctx.fillStyle = '#333333';
-            ctx.font = `${10 / this.camera.zoom}px sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.fillText(army.totalUnits.toString(), x, y + size + 12 / this.camera.zoom);
         }
     }
 

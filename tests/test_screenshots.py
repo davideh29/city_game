@@ -507,6 +507,335 @@ class TestGameScreenshots:
             assert output_path.exists()
 
 
+class TestArmyAndCombat:
+    """Test army visualization and combat features."""
+
+    def _capture_and_compare(self, final_path: Path, capture_func, **kwargs):
+        """
+        Helper to capture screenshot to temp file and only save if changed.
+        Returns True if file was updated, False if unchanged.
+        """
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            temp_path = Path(tmp.name)
+
+        capture_func(temp_path=str(temp_path), **kwargs)
+
+        assert temp_path.exists(), "Screenshot was not created"
+        assert temp_path.stat().st_size > 0, "Screenshot file is empty"
+
+        was_updated = save_screenshot_if_changed(temp_path, final_path)
+        return was_updated
+
+    def test_army_visualization(self, ensure_screenshots_dir):
+        """
+        Capture army visualization with circle and unit count.
+        Shows: Army rendered as a circle with unit count inside.
+        """
+        output_path = ensure_screenshots_dir / 'army_visualization.png'
+
+        actions = [
+            {'type': 'wait', 'ms': 1000},
+            # Create an army from the player's settlement
+            {'type': 'evaluate', 'script': '''
+                if(window.game) {
+                    const settlements = Object.values(game.state.settlements);
+                    const playerSettlement = settlements.find(s => s.ownerId === game.playerId);
+                    if (playerSettlement) {
+                        // Create an army directly (bypasses population check for testing)
+                        const army = new Army({
+                            name: 'Test Army',
+                            position: new Vec2(playerSettlement.position.x + 100, playerSettlement.position.y + 50),
+                            ownerId: game.playerId,
+                            units: { militia: 50, infantry: 20 }
+                        });
+                        game.state.armies[army.id] = army;
+
+                        // Center on the army
+                        camera.centerOn(army.position.x, army.position.y);
+                        camera.setZoom(1.5);
+                    }
+                }
+            '''},
+            {'type': 'wait', 'ms': 500},
+        ]
+
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
+
+        self._capture_and_compare(output_path, capture)
+        assert output_path.exists()
+
+    def test_army_selected_info_bar(self, ensure_screenshots_dir):
+        """
+        Capture army selection showing bottom info bar with unit composition.
+        Shows: Selected army with info bar displaying unit types and counts.
+        """
+        output_path = ensure_screenshots_dir / 'army_info_bar.png'
+
+        actions = [
+            {'type': 'wait', 'ms': 1000},
+            # Create and select an army
+            {'type': 'evaluate', 'script': '''
+                if(window.game && window.inputHandler) {
+                    const settlements = Object.values(game.state.settlements);
+                    const playerSettlement = settlements.find(s => s.ownerId === game.playerId);
+                    if (playerSettlement) {
+                        // Create an army
+                        const army = new Army({
+                            name: '1st Legion',
+                            position: new Vec2(playerSettlement.position.x + 80, playerSettlement.position.y - 40),
+                            ownerId: game.playerId,
+                            units: { militia: 30, infantry: 15, cavalry: 5 }
+                        });
+                        game.state.armies[army.id] = army;
+
+                        // Select the army
+                        inputHandler.selectEntity(army, 'army');
+                        camera.centerOn(army.position.x, army.position.y);
+                        camera.setZoom(1.2);
+                    }
+                }
+            '''},
+            {'type': 'wait', 'ms': 500},
+        ]
+
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
+
+        self._capture_and_compare(output_path, capture)
+        assert output_path.exists()
+
+    def test_settlement_with_garrison(self, ensure_screenshots_dir):
+        """
+        Capture settlement with garrison units displayed.
+        Shows: Settlement with garrison shield icon and bottom info bar.
+        """
+        output_path = ensure_screenshots_dir / 'settlement_garrison.png'
+
+        actions = [
+            {'type': 'wait', 'ms': 1000},
+            # Add garrison to player settlement and select it
+            {'type': 'evaluate', 'script': '''
+                if(window.game && window.inputHandler) {
+                    const settlements = Object.values(game.state.settlements);
+                    const playerSettlement = settlements.find(s => s.ownerId === game.playerId);
+                    if (playerSettlement) {
+                        // Add garrison
+                        playerSettlement.garrison = {
+                            units: { militia: 20, infantry: 10 }
+                        };
+
+                        // Select the settlement
+                        inputHandler.selectEntity(playerSettlement, 'settlement');
+                        camera.centerOn(playerSettlement.position.x, playerSettlement.position.y);
+                        camera.setZoom(1.5);
+                    }
+                }
+            '''},
+            {'type': 'wait', 'ms': 500},
+        ]
+
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
+
+        self._capture_and_compare(output_path, capture)
+        assert output_path.exists()
+
+    def test_settlement_training_queue(self, ensure_screenshots_dir):
+        """
+        Capture settlement with training queue visible.
+        Shows: Settlement with units being trained and progress bar.
+        """
+        output_path = ensure_screenshots_dir / 'settlement_training.png'
+
+        actions = [
+            {'type': 'wait', 'ms': 1000},
+            # Add training queue and select settlement
+            {'type': 'evaluate', 'script': '''
+                if(window.game && window.inputHandler) {
+                    const settlements = Object.values(game.state.settlements);
+                    const playerSettlement = settlements.find(s => s.ownerId === game.playerId);
+                    if (playerSettlement) {
+                        // Add a barracks
+                        const barracks = new Building({
+                            type: 'barracks',
+                            position: playerSettlement.position.add(new Vec2(30, 30)),
+                            settlementId: playerSettlement.id,
+                            ownerId: game.playerId,
+                            constructionProgress: 1.0
+                        });
+                        game.state.buildings[barracks.id] = barracks;
+                        playerSettlement.buildings.push(barracks);
+
+                        // Add training queue
+                        playerSettlement.trainingQueue = [
+                            { unitType: 'militia', count: 10, progress: 15, totalTime: 50 },
+                            { unitType: 'infantry', count: 5, progress: 0, totalTime: 50 }
+                        ];
+
+                        // Select the settlement
+                        inputHandler.selectEntity(playerSettlement, 'settlement');
+                        camera.centerOn(playerSettlement.position.x, playerSettlement.position.y);
+                        camera.setZoom(1.2);
+                    }
+                }
+            '''},
+            {'type': 'wait', 'ms': 500},
+        ]
+
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
+
+        self._capture_and_compare(output_path, capture)
+        assert output_path.exists()
+
+    def test_settlement_under_siege(self, ensure_screenshots_dir):
+        """
+        Capture settlement under siege with attack indicator.
+        Shows: Settlement with siege indicator, pulsing red ring, and crossed swords.
+        """
+        output_path = ensure_screenshots_dir / 'settlement_siege.png'
+
+        actions = [
+            {'type': 'wait', 'ms': 1000},
+            # Create a siege battle
+            {'type': 'evaluate', 'script': '''
+                if(window.game) {
+                    const settlements = Object.values(game.state.settlements);
+                    const aiSettlement = settlements.find(s => s.ownerId !== game.playerId && s.ownerId !== null);
+
+                    if (aiSettlement) {
+                        // Create an attacking army
+                        const army = new Army({
+                            name: 'Siege Force',
+                            position: aiSettlement.position.clone(),
+                            ownerId: game.playerId,
+                            units: { militia: 100, infantry: 50 }
+                        });
+                        army.inBattle = true;
+                        game.state.armies[army.id] = army;
+
+                        // Create garrison for defender
+                        const garrison = {
+                            id: 'garrison_' + aiSettlement.id,
+                            name: aiSettlement.name + ' Garrison',
+                            ownerId: aiSettlement.ownerId,
+                            position: aiSettlement.position.clone(),
+                            units: { militia: 30 },
+                            morale: 70,
+                            get totalStrength() {
+                                return Object.values(this.units).reduce((a, b) => a + b, 0);
+                            }
+                        };
+
+                        // Create battle
+                        const battle = new Battle({
+                            location: aiSettlement.position.clone(),
+                            locationType: 'siege',
+                            attackerId: army.id,
+                            defenderId: garrison.id,
+                            attackerStartingStrength: army.totalStrength,
+                            defenderStartingStrength: garrison.totalStrength,
+                            fortificationModifier: 1.0,
+                            startedTick: game.state.tick
+                        });
+                        battle._garrison = garrison;
+                        battle._settlement = aiSettlement;
+
+                        game.state.battles[battle.id] = battle;
+
+                        // Center on the siege
+                        camera.centerOn(aiSettlement.position.x, aiSettlement.position.y);
+                        camera.setZoom(1.0);
+                    }
+                }
+            '''},
+            {'type': 'wait', 'ms': 500},
+        ]
+
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
+
+        self._capture_and_compare(output_path, capture)
+        assert output_path.exists()
+
+    def test_army_moving(self, ensure_screenshots_dir):
+        """
+        Capture army with movement destination.
+        Shows: Army with direction arrow and movement indicator ring.
+        """
+        output_path = ensure_screenshots_dir / 'army_moving.png'
+
+        actions = [
+            {'type': 'wait', 'ms': 1000},
+            # Create a moving army
+            {'type': 'evaluate', 'script': '''
+                if(window.game) {
+                    const settlements = Object.values(game.state.settlements);
+                    const playerSettlement = settlements.find(s => s.ownerId === game.playerId);
+                    if (playerSettlement) {
+                        // Create an army with a destination
+                        const army = new Army({
+                            name: 'Marching Force',
+                            position: new Vec2(playerSettlement.position.x + 150, playerSettlement.position.y),
+                            ownerId: game.playerId,
+                            units: { militia: 40, cavalry: 10 }
+                        });
+                        army.destination = new Vec2(playerSettlement.position.x + 400, playerSettlement.position.y - 100);
+                        game.state.armies[army.id] = army;
+
+                        // Center on the army
+                        camera.centerOn(army.position.x, army.position.y);
+                        camera.setZoom(1.5);
+                    }
+                }
+            '''},
+            {'type': 'wait', 'ms': 500},
+        ]
+
+        def capture(temp_path):
+            screenshot_with_interaction(
+                str(HTML_PATH),
+                temp_path,
+                width=1400,
+                height=900,
+                actions=actions
+            )
+
+        self._capture_and_compare(output_path, capture)
+        assert output_path.exists()
+
+
 class TestResourceRendering:
     """Test resource node rendering."""
 
