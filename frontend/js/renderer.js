@@ -11,8 +11,19 @@ class Renderer {
 
         // Colors from design doc
         this.colors = {
-            mapBackground: '#7cb342',  // Grass green background
-            gridLines: '#689f38',      // Slightly darker green grid
+            mapBackground: '#6aa33a',  // Grass green background (slightly darker base)
+            gridLines: '#5a8f32',      // Slightly darker green grid
+
+            // Grass color palette for realistic rendering
+            grass: {
+                base: '#6aa33a',
+                light: '#7cb342',
+                lighter: '#8bc34a',
+                dark: '#558b2f',
+                darker: '#4a7c28',
+                accent: '#9ccc65',
+                shadow: '#4e7a25'
+            },
             selection: '#4fc3f7',
             selectionGlow: 'rgba(79, 195, 247, 0.3)',
 
@@ -75,12 +86,15 @@ class Renderer {
     render(gameState) {
         const ctx = this.ctx;
 
-        // Clear canvas
+        // Clear canvas with base grass color
         ctx.fillStyle = this.colors.mapBackground;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // Apply camera transform
         this.camera.applyTransform(ctx);
+
+        // Draw realistic grass terrain
+        this.drawGrassTerrain(ctx);
 
         // Draw grid (optional, subtle)
         this.drawGrid(ctx);
@@ -146,7 +160,7 @@ class Renderer {
         const gridSize = 200;
         const bounds = this.camera.getVisibleBounds();
 
-        ctx.strokeStyle = this.colors.gridLines;
+        ctx.strokeStyle = this.colors.gridLines + '40';  // More subtle grid
         ctx.lineWidth = 1 / this.camera.zoom;
 
         const startX = Math.floor(bounds.left / gridSize) * gridSize;
@@ -162,6 +176,225 @@ class Renderer {
             ctx.lineTo(bounds.right, y);
         }
         ctx.stroke();
+    }
+
+    /**
+     * Draw realistic grass terrain with multiple layers
+     */
+    drawGrassTerrain(ctx) {
+        const bounds = this.camera.getVisibleBounds();
+        const grass = this.colors.grass;
+
+        // Layer 1: Large grass patches (terrain variation)
+        this.drawGrassPatches(ctx, bounds);
+
+        // Layer 2: Medium grass clumps
+        this.drawGrassClumps(ctx, bounds);
+
+        // Layer 3: Individual grass blades (only at higher zoom)
+        if (this.camera.zoom >= 0.6) {
+            this.drawGrassBlades(ctx, bounds);
+        }
+    }
+
+    /**
+     * Draw large grass patches for terrain color variation
+     * Uses a consistent grid-based approach with seeded randomness
+     */
+    drawGrassPatches(ctx, bounds) {
+        const patchSize = 100;
+        const grass = this.colors.grass;
+
+        const startX = Math.floor(bounds.left / patchSize) * patchSize;
+        const startY = Math.floor(bounds.top / patchSize) * patchSize;
+
+        for (let x = startX; x <= bounds.right + patchSize; x += patchSize) {
+            for (let y = startY; y <= bounds.bottom + patchSize; y += patchSize) {
+                // Use position-based seed for consistency
+                const seed = this.hashCoords(x, y, 1);
+                const rng = this.seededRandom(seed);
+
+                // Determine patch characteristics
+                const brightness = rng();
+
+                // Create subtle color variations
+                let patchColor;
+                if (brightness < 0.2) {
+                    patchColor = grass.darker;
+                } else if (brightness < 0.4) {
+                    patchColor = grass.dark;
+                } else if (brightness < 0.6) {
+                    patchColor = grass.base;
+                } else if (brightness < 0.8) {
+                    patchColor = grass.light;
+                } else {
+                    patchColor = grass.lighter;
+                }
+
+                // Draw patch with soft edges using gradient
+                const centerX = x + patchSize / 2 + (rng() - 0.5) * patchSize * 0.3;
+                const centerY = y + patchSize / 2 + (rng() - 0.5) * patchSize * 0.3;
+                const radius = patchSize * (0.4 + rng() * 0.4);
+
+                const gradient = ctx.createRadialGradient(
+                    centerX, centerY, 0,
+                    centerX, centerY, radius
+                );
+                gradient.addColorStop(0, patchColor + '60');
+                gradient.addColorStop(0.6, patchColor + '30');
+                gradient.addColorStop(1, 'transparent');
+
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+
+    /**
+     * Draw medium grass clumps scattered across the terrain
+     */
+    drawGrassClumps(ctx, bounds) {
+        const clumpSpacing = 50;
+        const grass = this.colors.grass;
+
+        const startX = Math.floor(bounds.left / clumpSpacing) * clumpSpacing;
+        const startY = Math.floor(bounds.top / clumpSpacing) * clumpSpacing;
+
+        for (let x = startX; x <= bounds.right + clumpSpacing; x += clumpSpacing) {
+            for (let y = startY; y <= bounds.bottom + clumpSpacing; y += clumpSpacing) {
+                const seed = this.hashCoords(x, y, 2);
+                const rng = this.seededRandom(seed);
+
+                // Skip some positions for natural randomness
+                if (rng() > 0.7) continue;
+
+                const clumpX = x + (rng() - 0.5) * clumpSpacing * 0.8;
+                const clumpY = y + (rng() - 0.5) * clumpSpacing * 0.8;
+
+                // Draw a small cluster of grass tufts
+                const numTufts = 2 + Math.floor(rng() * 3);
+                for (let i = 0; i < numTufts; i++) {
+                    const tuftX = clumpX + (rng() - 0.5) * 20;
+                    const tuftY = clumpY + (rng() - 0.5) * 20;
+                    const size = 4 + rng() * 6;
+                    const shade = rng();
+
+                    let color;
+                    if (shade < 0.3) {
+                        color = grass.dark;
+                    } else if (shade < 0.7) {
+                        color = grass.light;
+                    } else {
+                        color = grass.accent;
+                    }
+
+                    this.drawGrassTuft(ctx, tuftX, tuftY, size, color, rng);
+                }
+            }
+        }
+    }
+
+    /**
+     * Draw individual grass blades for detail at high zoom
+     */
+    drawGrassBlades(ctx, bounds) {
+        const bladeSpacing = 25 / this.camera.zoom;
+        const grass = this.colors.grass;
+
+        // Limit density at very high zoom to avoid performance issues
+        const maxBladeSpacing = Math.max(bladeSpacing, 15);
+
+        const startX = Math.floor(bounds.left / maxBladeSpacing) * maxBladeSpacing;
+        const startY = Math.floor(bounds.top / maxBladeSpacing) * maxBladeSpacing;
+
+        for (let x = startX; x <= bounds.right + maxBladeSpacing; x += maxBladeSpacing) {
+            for (let y = startY; y <= bounds.bottom + maxBladeSpacing; y += maxBladeSpacing) {
+                const seed = this.hashCoords(x, y, 3);
+                const rng = this.seededRandom(seed);
+
+                // Sparse distribution
+                if (rng() > 0.4) continue;
+
+                const bladeX = x + (rng() - 0.5) * maxBladeSpacing;
+                const bladeY = y + (rng() - 0.5) * maxBladeSpacing;
+
+                // Draw 1-3 blades in a small cluster
+                const numBlades = 1 + Math.floor(rng() * 3);
+                for (let i = 0; i < numBlades; i++) {
+                    const bx = bladeX + (rng() - 0.5) * 6;
+                    const by = bladeY + (rng() - 0.5) * 4;
+                    const height = (6 + rng() * 8) / this.camera.zoom;
+                    const curve = (rng() - 0.5) * 0.6;
+                    const shade = rng();
+
+                    let color;
+                    if (shade < 0.25) {
+                        color = grass.darker;
+                    } else if (shade < 0.5) {
+                        color = grass.dark;
+                    } else if (shade < 0.75) {
+                        color = grass.light;
+                    } else {
+                        color = grass.accent;
+                    }
+
+                    this.drawSingleGrassBlade(ctx, bx, by, height, curve, color);
+                }
+            }
+        }
+    }
+
+    /**
+     * Draw a single grass tuft (small cluster of overlapping shapes)
+     */
+    drawGrassTuft(ctx, x, y, size, color, rng) {
+        // Draw multiple overlapping ellipses for a tuft effect
+        ctx.fillStyle = color + '70';
+
+        for (let i = 0; i < 3; i++) {
+            const offsetX = (rng() - 0.5) * size * 0.5;
+            const offsetY = (rng() - 0.5) * size * 0.3;
+            const w = size * (0.6 + rng() * 0.4);
+            const h = size * (0.4 + rng() * 0.3);
+
+            ctx.beginPath();
+            ctx.ellipse(x + offsetX, y + offsetY, w, h, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    /**
+     * Draw a single grass blade
+     */
+    drawSingleGrassBlade(ctx, x, y, height, curve, color) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5 / this.camera.zoom;
+        ctx.lineCap = 'round';
+
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+
+        // Draw curved blade using quadratic curve
+        const controlX = x + curve * height;
+        const controlY = y - height * 0.6;
+        const endX = x + curve * height * 1.5;
+        const endY = y - height;
+
+        ctx.quadraticCurveTo(controlX, controlY, endX, endY);
+        ctx.stroke();
+    }
+
+    /**
+     * Hash coordinates to get consistent seed for a position
+     */
+    hashCoords(x, y, layer) {
+        // Combine coordinates and layer into a single seed
+        const a = Math.floor(x / 10) * 73856093;
+        const b = Math.floor(y / 10) * 19349663;
+        const c = layer * 83492791;
+        return Math.abs((a ^ b ^ c) & 0x7fffffff);
     }
 
     /**
