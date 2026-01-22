@@ -39,14 +39,20 @@ def screenshot_html(
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
-    # Try to use installed chromium with explicit path if needed
-    chromium_path = '/root/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell'
+    # Browser stability arguments for headless mode
+    browser_args = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-extensions'
+    ]
 
     with sync_playwright() as p:
-        if os.path.exists(chromium_path):
-            browser = p.chromium.launch(headless=True, executable_path=chromium_path)
-        else:
-            browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=True, args=browser_args)
         page = browser.new_page(viewport={'width': width, 'height': height})
 
         print(f"Loading: {file_url}")
@@ -88,14 +94,20 @@ def screenshot_with_interaction(
 
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
 
-    # Try to use installed chromium with explicit path if needed
-    chromium_path = '/root/.cache/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell'
+    # Browser stability arguments for headless mode
+    browser_args = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-extensions'
+    ]
 
     with sync_playwright() as p:
-        if os.path.exists(chromium_path):
-            browser = p.chromium.launch(headless=True, executable_path=chromium_path)
-        else:
-            browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=True, args=browser_args)
         page = browser.new_page(viewport={'width': width, 'height': height})
 
         page.goto(file_url)

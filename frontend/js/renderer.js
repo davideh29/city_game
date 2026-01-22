@@ -457,65 +457,32 @@ class Renderer {
         const radius = resource.radius;
         const color = this.colors.resources[resource.resourceType] || '#888888';
 
-        // Draw containing circle for the resource
-        ctx.fillStyle = color + '15';  // Very light fill
-        ctx.strokeStyle = color + '60'; // Semi-transparent stroke
-        ctx.lineWidth = 2 / this.camera.zoom;
-
+        // Draw subtle ground shadow/glow for the resource area
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius * 1.2);
+        gradient.addColorStop(0, color + '20');
+        gradient.addColorStop(0.7, color + '10');
+        gradient.addColorStop(1, 'transparent');
+        ctx.fillStyle = gradient;
         ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.arc(x, y, radius * 1.2, 0, Math.PI * 2);
         ctx.fill();
-        ctx.stroke();
 
         // Different shapes for different resource types
         switch (resource.resourceType) {
             case 'forest':
-                // Draw multiple tree circles
-                ctx.fillStyle = color;
-                const treePositions = [
-                    { dx: 0, dy: 0 },
-                    { dx: -12, dy: -8 },
-                    { dx: 12, dy: -8 },
-                    { dx: -8, dy: 10 },
-                    { dx: 8, dy: 10 }
-                ];
-                for (const pos of treePositions) {
-                    ctx.beginPath();
-                    ctx.arc(x + pos.dx, y + pos.dy, 8, 0, Math.PI * 2);
-                    ctx.fill();
-                }
+                this.drawForest(ctx, x, y, radius, color, resource);
                 break;
 
             case 'stone':
-                // Draw rectangle
-                ctx.fillStyle = color;
-                ctx.fillRect(x - radius * 0.7, y - radius * 0.5, radius * 1.4, radius);
+                this.drawStoneDeposit(ctx, x, y, radius, color, resource);
                 break;
 
             case 'iron':
-                // Draw hexagon
-                ctx.fillStyle = color;
-                ctx.beginPath();
-                for (let i = 0; i < 6; i++) {
-                    const angle = (i / 6) * Math.PI * 2 - Math.PI / 6;
-                    const px = x + Math.cos(angle) * radius * 0.7;
-                    const py = y + Math.sin(angle) * radius * 0.7;
-                    if (i === 0) ctx.moveTo(px, py);
-                    else ctx.lineTo(px, py);
-                }
-                ctx.closePath();
-                ctx.fill();
+                this.drawIronOre(ctx, x, y, radius, color, resource);
                 break;
 
             case 'fertile':
-                // Draw dotted circle outline
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 3 / this.camera.zoom;
-                ctx.setLineDash([5 / this.camera.zoom, 5 / this.camera.zoom]);
-                ctx.beginPath();
-                ctx.arc(x, y, radius * 0.8, 0, Math.PI * 2);
-                ctx.stroke();
-                ctx.setLineDash([]);
+                this.drawFertileLand(ctx, x, y, radius, color, resource);
                 break;
 
             default:
@@ -529,11 +496,356 @@ class Renderer {
         // Show remaining amount if zoomed in
         if (this.camera.zoom >= 1.0 && resource.amountRemaining < resource.totalAmount) {
             const percent = resource.amountRemaining / resource.totalAmount;
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-            ctx.font = `${10 / this.camera.zoom}px sans-serif`;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.lineWidth = 2 / this.camera.zoom;
+            ctx.font = `bold ${10 / this.camera.zoom}px sans-serif`;
             ctx.textAlign = 'center';
+            ctx.strokeText(`${Math.floor(percent * 100)}%`, x, y + radius + 12 / this.camera.zoom);
             ctx.fillText(`${Math.floor(percent * 100)}%`, x, y + radius + 12 / this.camera.zoom);
         }
+    }
+
+    /**
+     * Draw a forest with realistic-looking trees
+     */
+    drawForest(ctx, x, y, radius, color, resource) {
+        // Use resource id for deterministic tree positions
+        const seed = this.hashString(resource.id || 'forest');
+        const rng = this.seededRandom(seed);
+
+        // Tree colors - various shades of green
+        const treeColors = [
+            '#1b5e20', // Dark green
+            '#2e7d32', // Forest green
+            '#388e3c', // Medium green
+            '#43a047', // Light green
+            '#4caf50', // Bright green
+        ];
+
+        // Generate tree positions within the radius
+        const numTrees = Math.max(5, Math.floor(radius / 5));
+        const trees = [];
+
+        for (let i = 0; i < numTrees; i++) {
+            const angle = rng() * Math.PI * 2;
+            const dist = rng() * radius * 0.8;
+            const treeX = x + Math.cos(angle) * dist;
+            const treeY = y + Math.sin(angle) * dist;
+            const size = 6 + rng() * 8;
+            const colorIdx = Math.floor(rng() * treeColors.length);
+
+            trees.push({ x: treeX, y: treeY, size, color: treeColors[colorIdx] });
+        }
+
+        // Sort trees by y position for depth effect (draw back to front)
+        trees.sort((a, b) => a.y - b.y);
+
+        // Draw each tree
+        for (const tree of trees) {
+            this.drawTree(ctx, tree.x, tree.y, tree.size, tree.color);
+        }
+    }
+
+    /**
+     * Draw a single tree with trunk and foliage
+     */
+    drawTree(ctx, tx, ty, size, color) {
+        const trunkHeight = size * 0.4;
+        const trunkWidth = size * 0.15;
+
+        // Draw shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+        ctx.beginPath();
+        ctx.ellipse(tx + size * 0.2, ty + trunkHeight, size * 0.6, size * 0.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw trunk
+        ctx.fillStyle = '#5d4037';
+        ctx.fillRect(tx - trunkWidth / 2, ty, trunkWidth, trunkHeight);
+
+        // Draw foliage layers (three overlapping circles for fuller look)
+        const darkerColor = this.darkenColor(color, 0.2);
+        const lighterColor = this.lightenColor(color, 0.15);
+
+        // Back layer (darker)
+        ctx.fillStyle = darkerColor;
+        ctx.beginPath();
+        ctx.arc(tx, ty - size * 0.3, size * 0.55, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Middle layer
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(tx - size * 0.15, ty - size * 0.15, size * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(tx + size * 0.15, ty - size * 0.15, size * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Top layer (lighter highlight)
+        ctx.fillStyle = lighterColor;
+        ctx.beginPath();
+        ctx.arc(tx, ty - size * 0.4, size * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    /**
+     * Draw a stone deposit with rocky terrain
+     */
+    drawStoneDeposit(ctx, x, y, radius, color, resource) {
+        const seed = this.hashString(resource.id || 'stone');
+        const rng = this.seededRandom(seed);
+
+        // Rock colors
+        const rockColors = ['#8d6e63', '#a1887f', '#795548', '#6d4c41', '#9e9e9e'];
+
+        // Generate rocks
+        const numRocks = 4 + Math.floor(rng() * 4);
+        const rocks = [];
+
+        for (let i = 0; i < numRocks; i++) {
+            const angle = rng() * Math.PI * 2;
+            const dist = rng() * radius * 0.6;
+            const rockX = x + Math.cos(angle) * dist;
+            const rockY = y + Math.sin(angle) * dist;
+            const width = 8 + rng() * 12;
+            const height = 6 + rng() * 10;
+            const colorIdx = Math.floor(rng() * rockColors.length);
+
+            rocks.push({ x: rockX, y: rockY, width, height, color: rockColors[colorIdx] });
+        }
+
+        // Sort by y for depth
+        rocks.sort((a, b) => a.y - b.y);
+
+        // Draw rocks
+        for (const rock of rocks) {
+            this.drawRock(ctx, rock.x, rock.y, rock.width, rock.height, rock.color);
+        }
+    }
+
+    /**
+     * Draw a single rock with shading
+     */
+    drawRock(ctx, rx, ry, width, height, color) {
+        // Shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        ctx.beginPath();
+        ctx.ellipse(rx + 2, ry + height * 0.3, width * 0.5, height * 0.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Main rock body (irregular polygon)
+        const darkerColor = this.darkenColor(color, 0.2);
+        const lighterColor = this.lightenColor(color, 0.2);
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(rx - width * 0.4, ry + height * 0.3);
+        ctx.lineTo(rx - width * 0.5, ry - height * 0.1);
+        ctx.lineTo(rx - width * 0.2, ry - height * 0.4);
+        ctx.lineTo(rx + width * 0.2, ry - height * 0.35);
+        ctx.lineTo(rx + width * 0.5, ry - height * 0.05);
+        ctx.lineTo(rx + width * 0.4, ry + height * 0.35);
+        ctx.closePath();
+        ctx.fill();
+
+        // Highlight edge
+        ctx.strokeStyle = lighterColor;
+        ctx.lineWidth = 1 / this.camera.zoom;
+        ctx.beginPath();
+        ctx.moveTo(rx - width * 0.2, ry - height * 0.4);
+        ctx.lineTo(rx + width * 0.2, ry - height * 0.35);
+        ctx.stroke();
+
+        // Shadow edge
+        ctx.strokeStyle = darkerColor;
+        ctx.beginPath();
+        ctx.moveTo(rx + width * 0.5, ry - height * 0.05);
+        ctx.lineTo(rx + width * 0.4, ry + height * 0.35);
+        ctx.stroke();
+    }
+
+    /**
+     * Draw iron ore deposit with metallic appearance
+     */
+    drawIronOre(ctx, x, y, radius, color, resource) {
+        const seed = this.hashString(resource.id || 'iron');
+        const rng = this.seededRandom(seed);
+
+        // Iron ore colors - grays with reddish/rust tints
+        const oreColors = ['#78909c', '#607d8b', '#546e7a', '#8b6914', '#a1887f'];
+
+        // Draw ground deposits
+        const numDeposits = 5 + Math.floor(rng() * 3);
+        const deposits = [];
+
+        for (let i = 0; i < numDeposits; i++) {
+            const angle = rng() * Math.PI * 2;
+            const dist = rng() * radius * 0.7;
+            const depX = x + Math.cos(angle) * dist;
+            const depY = y + Math.sin(angle) * dist;
+            const size = 5 + rng() * 8;
+            const colorIdx = Math.floor(rng() * oreColors.length);
+
+            deposits.push({ x: depX, y: depY, size, color: oreColors[colorIdx] });
+        }
+
+        // Sort by y
+        deposits.sort((a, b) => a.y - b.y);
+
+        // Draw ore chunks
+        for (const dep of deposits) {
+            this.drawOreChunk(ctx, dep.x, dep.y, dep.size, dep.color);
+        }
+
+        // Draw sparkle/metallic highlights
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        for (let i = 0; i < 4; i++) {
+            const sparkleX = x + (rng() - 0.5) * radius;
+            const sparkleY = y + (rng() - 0.5) * radius;
+            ctx.beginPath();
+            ctx.arc(sparkleX, sparkleY, 1.5 / this.camera.zoom, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    /**
+     * Draw a single ore chunk
+     */
+    drawOreChunk(ctx, ox, oy, size, color) {
+        // Shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        ctx.beginPath();
+        ctx.ellipse(ox + 1, oy + size * 0.2, size * 0.5, size * 0.15, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Main chunk - hexagonal shape for crystalline look
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+            const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
+            const px = ox + Math.cos(angle) * size * 0.5;
+            const py = oy + Math.sin(angle) * size * 0.4;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        // Metallic highlight
+        const lighterColor = this.lightenColor(color, 0.3);
+        ctx.fillStyle = lighterColor;
+        ctx.beginPath();
+        ctx.moveTo(ox - size * 0.25, oy - size * 0.3);
+        ctx.lineTo(ox + size * 0.25, oy - size * 0.3);
+        ctx.lineTo(ox, oy - size * 0.1);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    /**
+     * Draw fertile land with grass and crop patterns
+     */
+    drawFertileLand(ctx, x, y, radius, color, resource) {
+        const seed = this.hashString(resource.id || 'fertile');
+        const rng = this.seededRandom(seed);
+
+        // Draw rich soil base
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+        gradient.addColorStop(0, '#4e342e');
+        gradient.addColorStop(0.5, '#5d4037');
+        gradient.addColorStop(1, '#6d4c41');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(x, y, radius * 0.9, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw crop rows or grass patches
+        const numRows = 4 + Math.floor(rng() * 3);
+        const rowSpacing = radius * 1.4 / numRows;
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3 / this.camera.zoom;
+
+        for (let i = 0; i < numRows; i++) {
+            const rowY = y - radius * 0.6 + i * rowSpacing;
+            const rowWidth = radius * 0.8 * (1 - Math.abs(i - numRows / 2) / numRows);
+
+            // Draw wavy grass line
+            ctx.beginPath();
+            ctx.moveTo(x - rowWidth, rowY);
+            for (let j = 0; j <= 8; j++) {
+                const px = x - rowWidth + (rowWidth * 2 * j / 8);
+                const py = rowY + Math.sin(j * Math.PI + rng() * 2) * 3;
+                ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+        }
+
+        // Draw small plants/wheat
+        const plantColors = ['#558b2f', '#689f38', '#7cb342', '#8bc34a'];
+        const numPlants = 8 + Math.floor(rng() * 6);
+
+        for (let i = 0; i < numPlants; i++) {
+            const angle = rng() * Math.PI * 2;
+            const dist = rng() * radius * 0.75;
+            const plantX = x + Math.cos(angle) * dist;
+            const plantY = y + Math.sin(angle) * dist;
+            const plantColor = plantColors[Math.floor(rng() * plantColors.length)];
+
+            this.drawPlant(ctx, plantX, plantY, 4 + rng() * 4, plantColor);
+        }
+    }
+
+    /**
+     * Draw a small plant/wheat stalk
+     */
+    drawPlant(ctx, px, py, height, color) {
+        // Stem
+        ctx.strokeStyle = '#33691e';
+        ctx.lineWidth = 1 / this.camera.zoom;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px, py - height);
+        ctx.stroke();
+
+        // Leaves/wheat head
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.ellipse(px, py - height - 2, 2, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    /**
+     * Seeded random number generator
+     */
+    seededRandom(seed) {
+        let s = seed;
+        return function() {
+            s = (s * 1103515245 + 12345) & 0x7fffffff;
+            return s / 0x7fffffff;
+        };
+    }
+
+    /**
+     * Darken a hex color
+     */
+    darkenColor(hex, amount) {
+        const r = Math.max(0, parseInt(hex.slice(1, 3), 16) * (1 - amount));
+        const g = Math.max(0, parseInt(hex.slice(3, 5), 16) * (1 - amount));
+        const b = Math.max(0, parseInt(hex.slice(5, 7), 16) * (1 - amount));
+        return `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
+    }
+
+    /**
+     * Lighten a hex color
+     */
+    lightenColor(hex, amount) {
+        const r = Math.min(255, parseInt(hex.slice(1, 3), 16) + (255 - parseInt(hex.slice(1, 3), 16)) * amount);
+        const g = Math.min(255, parseInt(hex.slice(3, 5), 16) + (255 - parseInt(hex.slice(3, 5), 16)) * amount);
+        const b = Math.min(255, parseInt(hex.slice(5, 7), 16) + (255 - parseInt(hex.slice(5, 7), 16)) * amount);
+        return `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
     }
 
     /**
