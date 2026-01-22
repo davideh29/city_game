@@ -118,13 +118,38 @@ class Settlement {
 
         // Defense
         this.wallsLevel = data.wallsLevel || 0;
-        this.garrison = data.garrison || null;
+        // Garrison is now an object with units: { militia: count, infantry: count, ... }
+        this.garrison = data.garrison || { units: {} };
 
         // Buildings
         this.buildings = data.buildings || [];
 
         // Production tracking
         this.productionPerTick = data.productionPerTick || { food: 0, wood: 0, stone: 0, iron: 0 };
+
+        // Training queue: array of { unitType: string, count: number, progress: number, totalTime: number }
+        this.trainingQueue = data.trainingQueue || [];
+    }
+
+    /**
+     * Get total garrison strength
+     */
+    get garrisonStrength() {
+        let strength = 0;
+        for (const [unitType, count] of Object.entries(this.garrison.units || {})) {
+            const typeData = UnitType[unitType.toUpperCase()];
+            if (typeData) {
+                strength += count * typeData.strength;
+            }
+        }
+        return strength;
+    }
+
+    /**
+     * Get total garrison units
+     */
+    get garrisonCount() {
+        return Object.values(this.garrison.units || {}).reduce((a, b) => a + b, 0);
     }
 
     get radius() {
@@ -167,9 +192,10 @@ class Settlement {
             unrest: this.unrest,
             revoltThreshold: this.revoltThreshold,
             wallsLevel: this.wallsLevel,
-            garrison: this.garrison,
+            garrison: this.garrison ? { units: { ...this.garrison.units } } : { units: {} },
             buildings: [...this.buildings],
             productionPerTick: { ...this.productionPerTick },
+            trainingQueue: [...this.trainingQueue],
             _isCapital: this._isCapital
         };
     }

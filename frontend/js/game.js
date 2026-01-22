@@ -15,7 +15,11 @@ const GAME_CONSTANTS = {
     OFF_ROAD_SPEED_MULT: 0.2,
 
     MAP_WIDTH: 2000,
-    MAP_HEIGHT: 2000
+    MAP_HEIGHT: 2000,
+
+    // Training constants
+    BASE_TRAINING_TIME: 5, // Base ticks per unit
+    POPULATION_PER_UNIT: 5, // Population consumed per unit recruited
 };
 
 /**
@@ -382,6 +386,7 @@ class Game {
         this.processResources();
         this.processSettlements();
         this.processConstruction();
+        this.processTraining();
         this.processResearch();
         this.processArmyMovement();
         this.processBattles();
@@ -589,6 +594,47 @@ class Game {
     }
 
     /**
+     * Process unit training in settlements
+     */
+    processTraining() {
+        for (const settlement of Object.values(this.state.settlements)) {
+            if (settlement.trainingQueue.length === 0) continue;
+
+            // Check if settlement has a barracks
+            const hasBarracks = settlement.buildings.some(b => b.type === 'barracks' && b.isComplete);
+            if (!hasBarracks) continue;
+
+            // Process first item in queue
+            const trainingItem = settlement.trainingQueue[0];
+            trainingItem.progress++;
+
+            // Check if training is complete
+            if (trainingItem.progress >= trainingItem.totalTime) {
+                // Add unit to garrison
+                if (!settlement.garrison) {
+                    settlement.garrison = { units: {} };
+                }
+                if (!settlement.garrison.units) {
+                    settlement.garrison.units = {};
+                }
+
+                const unitType = trainingItem.unitType;
+                settlement.garrison.units[unitType] = (settlement.garrison.units[unitType] || 0) + trainingItem.count;
+
+                // Remove from queue
+                settlement.trainingQueue.shift();
+
+                // Dispatch event
+                this.dispatchEvent('trainingComplete', {
+                    settlementId: settlement.id,
+                    unitType: unitType,
+                    count: trainingItem.count
+                });
+            }
+        }
+    }
+
+    /**
      * Process research progress
      */
     processResearch() {
@@ -745,18 +791,79 @@ class Game {
      * Start a siege
      */
     startSiege(army, settlement) {
-        // Create a pseudo-army for the settlement defender
-        const garrison = settlement.garrison || {
-            id: 'garrison_' + settlement.id,
-            name: 'Garrison',
-            ownerId: settlement.ownerId,
-            position: settlement.position.clone(),
-            units: { militia: Math.floor(settlement.population / 20) },
-            morale: 80,
-            get totalStrength() {
-                return Object.values(this.units).reduce((a, b) => a + b, 0);
-            }
-        };
+        // Use settlement's garrison or create militia from population
+        let garrison;
+        if (settlement.garrison && settlement.garrisonCount > 0) {
+            // Use existing garrison
+            garrison = {
+                id: 'garrison_' + settlement.id,
+                name: settlement.name + ' Garrison',
+                ownerId: settlement.ownerId,
+                position: settlement.position.clone(),
+                units: { ...settlement.garrison.units },
+                morale: 80,
+                get totalStrength() {
+                    let strength = 0;
+                    for (const [unitType, count] of Object.entries(this.units)) {
+                        const typeData = UnitType[unitType.toUpperCase()];
+                        if (typeData) {
+                            strength += count * typeData.strength;
+                        }
+                    }
+                    return strength;
+                },
+                get totalUnits() {
+                    return Object.values(this.units).reduce((a, b) => a + b, 0);
+                },
+                applyCasualties(amount) {
+                    let remaining = amount;
+                    const unitTypes = Object.keys(this.units);
+                    for (const unitType of unitTypes) {
+                        if (remaining <= 0) break;
+                        const toRemove = Math.min(this.units[unitType], Math.ceil(remaining / unitTypes.length));
+                        this.units[unitType] -= toRemove;
+                        remaining -= toRemove;
+                    }
+                    for (const unitType of Object.keys(this.units)) {
+                        if (this.units[unitType] <= 0) {
+                            delete this.units[unitType];
+                        }
+                    }
+                }
+            };
+        } else {
+            // Generate militia from population
+            const militiaCount = Math.max(5, Math.floor(settlement.population / 20));
+            garrison = {
+                id: 'garrison_' + settlement.id,
+                name: settlement.name + ' Militia',
+                ownerId: settlement.ownerId,
+                position: settlement.position.clone(),
+                units: { militia: militiaCount },
+                morale: 60, // Lower morale for hastily assembled militia
+                get totalStrength() {
+                    return Object.values(this.units).reduce((a, b) => a + b, 0);
+                },
+                get totalUnits() {
+                    return Object.values(this.units).reduce((a, b) => a + b, 0);
+                },
+                applyCasualties(amount) {
+                    let remaining = amount;
+                    const unitTypes = Object.keys(this.units);
+                    for (const unitType of unitTypes) {
+                        if (remaining <= 0) break;
+                        const toRemove = Math.min(this.units[unitType], Math.ceil(remaining / unitTypes.length));
+                        this.units[unitType] -= toRemove;
+                        remaining -= toRemove;
+                    }
+                    for (const unitType of Object.keys(this.units)) {
+                        if (this.units[unitType] <= 0) {
+                            delete this.units[unitType];
+                        }
+                    }
+                }
+            };
+        }
 
         army.inBattle = true;
         army.destination = null;
@@ -775,7 +882,7 @@ class Game {
             startedTick: this.state.tick
         });
 
-        // Store garrison temporarily
+        // Store garrison and settlement reference
         battle._garrison = garrison;
         battle._settlement = settlement;
 
@@ -888,14 +995,43 @@ class Game {
                 settlement.ownerId = attacker ? attacker.ownerId : null;
                 settlement.contentment = 30; // Low contentment after capture
 
+                // Clear existing garrison
+                settlement.garrison = { units: {} };
+
+                // Attacking army garrisons in the city
+                if (attacker && attacker.totalUnits > 0) {
+                    // Transfer army units to garrison
+                    settlement.garrison = {
+                        units: { ...attacker.units }
+                    };
+
+                    // Remove the army from the map (it's now garrisoned)
+                    delete this.state.armies[attacker.id];
+
+                    this.dispatchEvent('armyGarrisoned', {
+                        settlementId: settlement.id,
+                        armyName: attacker.name
+                    });
+                }
+
                 this.dispatchEvent('settlementCaptured', {
                     settlement,
                     capturedBy: attacker ? attacker.ownerId : null
                 });
+            } else {
+                // Defender wins - update settlement garrison with surviving units
+                if (battle._garrison && battle._garrison.totalUnits > 0) {
+                    settlement.garrison = {
+                        units: { ...battle._garrison.units }
+                    };
+                } else {
+                    // No survivors
+                    settlement.garrison = { units: {} };
+                }
             }
         }
 
-        // Remove defeated armies
+        // Remove defeated armies (for field battles)
         if (attacker && attacker.totalUnits <= 0) {
             delete this.state.armies[attacker.id];
         }
@@ -1190,18 +1326,89 @@ class Game {
         delete this.state.buildings[buildingId];
     }
 
+    /**
+     * Queue unit training at a settlement's barracks
+     */
+    trainUnits(settlementId, unitType, count, ownerId = null) {
+        const settlement = this.state.settlements[settlementId];
+        if (!settlement) return;
+
+        ownerId = ownerId || settlement.ownerId;
+
+        // Check if settlement has a completed barracks
+        const hasBarracks = settlement.buildings.some(b => b.type === 'barracks' && b.isComplete);
+        if (!hasBarracks) {
+            this.dispatchEvent('actionFailed', { reason: 'No barracks available' });
+            return;
+        }
+
+        const typeData = UnitType[unitType.toUpperCase()];
+        if (!typeData) {
+            this.dispatchEvent('actionFailed', { reason: 'Unknown unit type' });
+            return;
+        }
+
+        // Check tech requirements
+        const player = this.state.players[ownerId];
+        if (typeData.requiredTech && !player.researchedTechs.has(typeData.requiredTech)) {
+            this.dispatchEvent('actionFailed', { reason: `Requires ${typeData.requiredTech}` });
+            return;
+        }
+
+        // Calculate costs
+        const goldCost = typeData.cost * count;
+        const populationCost = GAME_CONSTANTS.POPULATION_PER_UNIT * count;
+
+        // Check resources
+        if (settlement.treasury < goldCost) {
+            this.dispatchEvent('actionFailed', { reason: 'Not enough gold' });
+            return;
+        }
+
+        if (settlement.population < populationCost + 10) { // Keep minimum population of 10
+            this.dispatchEvent('actionFailed', { reason: 'Not enough population' });
+            return;
+        }
+
+        // Deduct costs
+        settlement.treasury -= goldCost;
+        settlement.population -= populationCost;
+
+        // Calculate training time (higher tier = longer time)
+        const trainingTime = GAME_CONSTANTS.BASE_TRAINING_TIME * count * (typeData.strength || 1);
+
+        // Add to training queue
+        settlement.trainingQueue.push({
+            unitType: typeData.id,
+            count: count,
+            progress: 0,
+            totalTime: trainingTime
+        });
+
+        this.dispatchEvent('trainingStarted', {
+            settlementId: settlement.id,
+            unitType: unitType,
+            count: count,
+            totalTime: trainingTime
+        });
+
+        return true;
+    }
+
     createArmy(settlementId, units, ownerId = null) {
         const settlement = this.state.settlements[settlementId];
         if (!settlement) return;
 
         ownerId = ownerId || settlement.ownerId;
 
-        // Calculate cost
+        // Calculate cost and population needed
         let totalCost = 0;
+        let totalPopCost = 0;
         for (const [unitType, count] of Object.entries(units)) {
             const typeData = UnitType[unitType.toUpperCase()];
             if (typeData) {
                 totalCost += typeData.cost * count;
+                totalPopCost += GAME_CONSTANTS.POPULATION_PER_UNIT * count;
             }
         }
 
@@ -1210,13 +1417,57 @@ class Game {
             return;
         }
 
+        if (settlement.population < totalPopCost + 10) {
+            this.dispatchEvent('actionFailed', { reason: 'Not enough population' });
+            return;
+        }
+
         settlement.treasury -= totalCost;
+        settlement.population -= totalPopCost;
 
         const army = new Army({
             name: generateArmyName(Object.keys(this.state.armies).length),
             position: settlement.position.clone(),
             ownerId: ownerId,
             units: units
+        });
+
+        this.state.armies[army.id] = army;
+        return army;
+    }
+
+    /**
+     * Merge garrison units into an army at settlement
+     */
+    deployGarrison(settlementId, units, ownerId = null) {
+        const settlement = this.state.settlements[settlementId];
+        if (!settlement) return;
+
+        ownerId = ownerId || settlement.ownerId;
+
+        // Check garrison has these units
+        const garrison = settlement.garrison || { units: {} };
+        for (const [unitType, count] of Object.entries(units)) {
+            if ((garrison.units[unitType] || 0) < count) {
+                this.dispatchEvent('actionFailed', { reason: `Not enough ${unitType} in garrison` });
+                return;
+            }
+        }
+
+        // Remove from garrison
+        for (const [unitType, count] of Object.entries(units)) {
+            garrison.units[unitType] -= count;
+            if (garrison.units[unitType] <= 0) {
+                delete garrison.units[unitType];
+            }
+        }
+
+        // Create army
+        const army = new Army({
+            name: generateArmyName(Object.keys(this.state.armies).length),
+            position: settlement.position.clone(),
+            ownerId: ownerId,
+            units: { ...units }
         });
 
         this.state.armies[army.id] = army;

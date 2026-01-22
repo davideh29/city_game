@@ -405,6 +405,157 @@ button:disabled {
     flex-wrap: wrap;
 }
 
+/* ==================== Entity Info Bar ==================== */
+#entity-info-bar {
+    background: var(--bg-card);
+    border-top: 1px solid var(--border-color);
+    padding: 8px 16px;
+    z-index: 99;
+}
+
+#entity-info-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+#entity-info-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--accent);
+}
+
+#entity-info-content {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+}
+
+.info-bar-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.info-bar-label {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.unit-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.unit-chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--bg-input);
+    border-radius: var(--border-radius);
+    font-size: 12px;
+}
+
+.unit-chip-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+.unit-chip-icon.militia {
+    background: #6d4c41;
+    color: white;
+}
+
+.unit-chip-icon.infantry {
+    background: #455a64;
+    color: white;
+}
+
+.unit-chip-icon.cavalry {
+    background: #7b1fa2;
+    color: white;
+}
+
+.unit-chip-icon.artillery {
+    background: #c62828;
+    color: white;
+}
+
+.unit-chip-count {
+    font-weight: 600;
+}
+
+.unit-chip-name {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+/* Training queue */
+.training-queue {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.training-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--bg-input);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--warning);
+}
+
+.training-item .unit-chip-icon {
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+}
+
+.training-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.training-progress-bar {
+    width: 60px;
+    height: 4px;
+    background: var(--bg-card);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.training-progress-fill {
+    height: 100%;
+    background: var(--warning);
+    transition: width 0.3s;
+}
+
+.training-time {
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+.no-units-text {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-style: italic;
+}
+
 /* ==================== Bottom Bar ==================== */
 #bottom-bar {
     height: var(--bottom-bar-height);
@@ -744,6 +895,28 @@ button:disabled {
     color: var(--text-primary);
     font-size: 14px;
     text-align: center;
+}
+
+.unit-item.locked {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.unit-item.locked .unit-info {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.modal-stats {
+    margin-top: 16px;
+    padding: 12px;
+    background: var(--bg-input);
+    border-radius: var(--border-radius);
+}
+
+.modal-stats p {
+    margin-bottom: 4px;
+    font-size: 13px;
 }
 
 /* ==================== Notifications ==================== */
