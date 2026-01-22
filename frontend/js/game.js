@@ -680,42 +680,260 @@ class Game {
     }
 
     /**
-     * Process army movement
+     * Process army movement - armies can only travel along roads
      */
     processArmyMovement() {
         for (const army of Object.values(this.state.armies)) {
             if (army.inBattle) continue;
             if (!army.destination) continue;
 
-            // Calculate speed based on road
-            let speed = GAME_CONSTANTS.BASE_ARMY_SPEED * army.speed;
-
-            // Check if on road
-            const onRoad = this.isArmyOnRoad(army);
-            if (!onRoad) {
-                speed *= GAME_CONSTANTS.OFF_ROAD_SPEED_MULT;
+            // If army doesn't have a path, try to find one along roads
+            if (!army.path || army.path.length === 0) {
+                const path = this.findRoadPath(army.position, army.destination, army.ownerId);
+                if (path && path.length > 0) {
+                    army.path = path;
+                    army.pathProgress = 0;
+                } else {
+                    // No road path available - army cannot move there
+                    army.destination = null;
+                    this.dispatchEvent('armyMoveFailed', {
+                        armyId: army.id,
+                        reason: 'No road connection to destination'
+                    });
+                    continue;
+                }
             }
 
-            // Move toward destination
-            const dx = army.destination.x - army.position.x;
-            const dy = army.destination.y - army.position.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+            // Calculate speed (always on road now)
+            let speed = GAME_CONSTANTS.BASE_ARMY_SPEED * army.speed;
 
-            if (dist <= speed) {
-                // Arrived
-                army.position.x = army.destination.x;
-                army.position.y = army.destination.y;
+            // Move along the path
+            while (speed > 0 && army.path.length > 0) {
+                const nextPoint = army.path[0];
+                const dx = nextPoint.x - army.position.x;
+                const dy = nextPoint.y - army.position.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist <= speed) {
+                    // Reached this waypoint
+                    army.position.x = nextPoint.x;
+                    army.position.y = nextPoint.y;
+                    speed -= dist;
+                    army.path.shift();
+                } else {
+                    // Move toward next waypoint
+                    army.position.x += (dx / dist) * speed;
+                    army.position.y += (dy / dist) * speed;
+                    speed = 0;
+                }
+            }
+
+            // Check if arrived at destination
+            if (army.path.length === 0) {
                 army.destination = null;
-                army.path = [];
-            } else {
-                // Move
-                army.position.x += (dx / dist) * speed;
-                army.position.y += (dy / dist) * speed;
             }
 
             // Check for encounters
             this.checkArmyEncounters(army);
         }
+    }
+
+    /**
+     * Find a path along roads between two points
+     * Returns array of Vec2 waypoints or null if no path exists
+     */
+    findRoadPath(start, end, ownerId) {
+        // Get all completed roads
+        const roads = Object.values(this.state.roads).filter(r => r.isComplete);
+        if (roads.length === 0) return null;
+
+        // Find nearest road point to start
+        const startRoadInfo = this.findNearestRoadPoint(start, roads);
+        if (!startRoadInfo) return null;
+
+        // Find nearest road point to end
+        const endRoadInfo = this.findNearestRoadPoint(end, roads);
+        if (!endRoadInfo) return null;
+
+        // Check if start and end are close enough to road network
+        const maxDistFromRoad = 50; // Allow some distance from road for settlements
+        if (startRoadInfo.distance > maxDistFromRoad || endRoadInfo.distance > maxDistFromRoad) {
+            return null;
+        }
+
+        // Build road network graph and find path using BFS
+        const path = this.findPathThroughRoadNetwork(
+            startRoadInfo.point,
+            endRoadInfo.point,
+            startRoadInfo.road,
+            endRoadInfo.road,
+            roads
+        );
+
+        if (!path) return null;
+
+        // Add final destination if not on road
+        if (end.distanceTo(path[path.length - 1]) > 5) {
+            path.push(end.clone());
+        }
+
+        return path;
+    }
+
+    /**
+     * Find the nearest point on any road
+     */
+    findNearestRoadPoint(position, roads) {
+        let nearest = null;
+        let minDist = Infinity;
+        let nearestRoad = null;
+
+        for (const road of roads) {
+            for (let i = 0; i < road.waypoints.length - 1; i++) {
+                const p1 = road.waypoints[i];
+                const p2 = road.waypoints[i + 1];
+                const point = this.closestPointOnSegment(position, p1, p2);
+                const dist = position.distanceTo(point);
+
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = point;
+                    nearestRoad = road;
+                }
+            }
+
+            // Also check waypoints themselves
+            for (const wp of road.waypoints) {
+                const dist = position.distanceTo(wp);
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = wp.clone();
+                    nearestRoad = road;
+                }
+            }
+        }
+
+        if (!nearest) return null;
+        return { point: nearest, distance: minDist, road: nearestRoad };
+    }
+
+    /**
+     * Find closest point on a line segment to a given point
+     */
+    closestPointOnSegment(point, segStart, segEnd) {
+        const dx = segEnd.x - segStart.x;
+        const dy = segEnd.y - segStart.y;
+        const lenSq = dx * dx + dy * dy;
+
+        if (lenSq === 0) return segStart.clone();
+
+        const t = Math.max(0, Math.min(1,
+            ((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / lenSq
+        ));
+
+        return new Vec2(
+            segStart.x + t * dx,
+            segStart.y + t * dy
+        );
+    }
+
+    /**
+     * Find path through road network using BFS
+     */
+    findPathThroughRoadNetwork(start, end, startRoad, endRoad, roads) {
+        // Build graph of road connections
+        const connectionThreshold = 30; // Roads connect if endpoints are within this distance
+
+        // Create nodes at each waypoint and intersection
+        const nodes = new Map(); // key: "x,y" -> { point: Vec2, connections: [{node, road}] }
+
+        // Add all waypoints as nodes
+        for (const road of roads) {
+            for (const wp of road.waypoints) {
+                const key = `${Math.round(wp.x)},${Math.round(wp.y)}`;
+                if (!nodes.has(key)) {
+                    nodes.set(key, { point: wp.clone(), connections: [] });
+                }
+            }
+        }
+
+        // Connect nodes along roads
+        for (const road of roads) {
+            for (let i = 0; i < road.waypoints.length - 1; i++) {
+                const wp1 = road.waypoints[i];
+                const wp2 = road.waypoints[i + 1];
+                const key1 = `${Math.round(wp1.x)},${Math.round(wp1.y)}`;
+                const key2 = `${Math.round(wp2.x)},${Math.round(wp2.y)}`;
+
+                const node1 = nodes.get(key1);
+                const node2 = nodes.get(key2);
+
+                if (node1 && node2) {
+                    node1.connections.push({ node: node2, road: road });
+                    node2.connections.push({ node: node1, road: road });
+                }
+            }
+        }
+
+        // Connect nodes from different roads that are close together
+        const nodeList = Array.from(nodes.values());
+        for (let i = 0; i < nodeList.length; i++) {
+            for (let j = i + 1; j < nodeList.length; j++) {
+                const dist = nodeList[i].point.distanceTo(nodeList[j].point);
+                if (dist < connectionThreshold && dist > 0) {
+                    // Connect these nodes
+                    nodeList[i].connections.push({ node: nodeList[j], road: null });
+                    nodeList[j].connections.push({ node: nodeList[i], road: null });
+                }
+            }
+        }
+
+        // Find start and end nodes
+        let startNode = null;
+        let endNode = null;
+        let minStartDist = Infinity;
+        let minEndDist = Infinity;
+
+        for (const node of nodeList) {
+            const startDist = start.distanceTo(node.point);
+            const endDist = end.distanceTo(node.point);
+
+            if (startDist < minStartDist) {
+                minStartDist = startDist;
+                startNode = node;
+            }
+            if (endDist < minEndDist) {
+                minEndDist = endDist;
+                endNode = node;
+            }
+        }
+
+        if (!startNode || !endNode) return null;
+        if (startNode === endNode) return [end.clone()];
+
+        // BFS to find path
+        const visited = new Set();
+        const queue = [{ node: startNode, path: [startNode.point.clone()] }];
+        visited.add(startNode);
+
+        while (queue.length > 0) {
+            const { node, path } = queue.shift();
+
+            for (const conn of node.connections) {
+                if (visited.has(conn.node)) continue;
+
+                const newPath = [...path, conn.node.point.clone()];
+
+                if (conn.node === endNode) {
+                    return newPath;
+                }
+
+                visited.add(conn.node);
+                queue.push({ node: conn.node, path: newPath });
+            }
+        }
+
+        return null; // No path found
     }
 
     /**
@@ -765,20 +983,33 @@ class Game {
 
     /**
      * Start a battle between two armies
+     * The defending army (the one that was stationary or moving slower) gets a defensive bonus
      */
     startBattle(attacker, defender) {
         attacker.inBattle = true;
         defender.inBattle = true;
         attacker.destination = null;
+        attacker.path = [];
         defender.destination = null;
+        defender.path = [];
+
+        // Determine if this is a road battle
+        const isOnRoad = this.isArmyOnRoad(attacker) || this.isArmyOnRoad(defender);
+        const locationType = isOnRoad ? 'road' : 'field';
+
+        // Defender bonus: the defender (the army that was engaged) gets a slight advantage
+        // Road battle: 1.25x bonus for defender (they can set up defensive positions)
+        // Field battle: 1.0x no bonus (open field combat)
+        const defenderBonus = isOnRoad ? 1.25 : 1.0;
 
         const battle = new Battle({
             location: attacker.position.clone(),
-            locationType: 'field',
+            locationType: locationType,
             attackerId: attacker.id,
             defenderId: defender.id,
             attackerStartingStrength: attacker.totalStrength,
             defenderStartingStrength: defender.totalStrength,
+            fortificationModifier: defenderBonus, // Use fortification modifier for defender bonus
             startedTick: this.state.tick
         });
 
@@ -1482,6 +1713,7 @@ class Game {
         if (army.ownerId !== ownerId) return;
 
         army.destination = destination.clone();
+        army.path = []; // Clear existing path so a new one will be calculated
     }
 
     setTaxRate(settlementId, rate) {
